@@ -1,5 +1,7 @@
 # Vali Code
 
+**Download:** [ValiCode.html](https://github.com/appDad/valiCode/raw/HEAD/ValiCode.html) (right-click, Save link as…)
+
 One HTML file. No install, no network, no dependencies. Open `ValiCode.html` in any
 browser and compare two pieces of code, two files, or two folders. Built for a
 locked-down Citrix desktop where you can bring a file in but cannot install anything.
