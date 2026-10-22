@@ -64,7 +64,10 @@
   .pane.drag { outline: 2px dashed var(--accent); outline-offset: -4px; }
   .pane .ph { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-bottom: 1px solid var(--border); }
   .pane .ph .name { font-family: var(--mono); font-size: 12px; color: var(--fg2); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .pane .ph input[type=text] { flex: 1; min-width: 0; font-family: var(--mono); font-size: 12px; }
+  .pane .ph input.fname { flex: 1; min-width: 0; font-family: var(--mono); font-size: 12px; background: transparent; border-color: transparent; color: var(--fg2); }
+  .pane .ph input.fname:not(:placeholder-shown) { color: var(--fg); }
+  .pane .ph input.fname:focus, .pane .ph input.fname:hover { background: var(--bg3); border-color: var(--border); }
+  .pane textarea::placeholder { color: var(--fg2); opacity: .8; font-family: var(--sans); font-size: 13px; line-height: 1.5; }
   .pane textarea { flex: 1; width: 100%; min-height: 140px; resize: vertical; border: 0; background: transparent; padding: 8px; font: 12px/1.45 var(--mono); outline: none; white-space: pre; overflow: auto; tab-size: 4; }
   .pane .hint { font-size: 11px; color: var(--fg2); padding: 2px 8px 6px; }
   .mid { display: flex; flex-direction: column; justify-content: center; gap: 6px; }
@@ -229,12 +232,16 @@
       <div class="pane" id="paneL">
         <div class="ph">
           <b>Left</b>
-          <input type="text" id="nameL" placeholder="old / original" spellcheck="false">
-          <button class="browse" data-side="L">Open…</button>
+          <button class="browse primary" data-side="L" title="Pick the original file">📂 Browse…</button>
+          <input type="text" id="nameL" class="fname" placeholder="no file loaded" spellcheck="false" title="File name. Editable if you pasted text and want a label.">
           <input type="file" id="fileL" hidden>
         </div>
-        <textarea id="txtL" spellcheck="false" placeholder="Paste or drop the ORIGINAL here"></textarea>
-        <div class="hint">Drop a file anywhere on this box, or paste text.</div>
+        <textarea id="txtL" spellcheck="false" placeholder="ORIGINAL version
+
+Click Browse… above to pick a file,
+or drag a file onto this box,
+or paste the code here."></textarea>
+        <div class="hint">Tip: drop two files anywhere on the page to fill both sides at once.</div>
       </div>
       <div class="mid">
         <button id="btnCompare" class="primary" title="Ctrl+Enter">Compare ▶</button>
@@ -245,12 +252,16 @@
       <div class="pane" id="paneR">
         <div class="ph">
           <b>Right</b>
-          <input type="text" id="nameR" placeholder="new / modified" spellcheck="false">
-          <button class="browse" data-side="R">Open…</button>
+          <button class="browse primary" data-side="R" title="Pick the new file">📂 Browse…</button>
+          <input type="text" id="nameR" class="fname" placeholder="no file loaded" spellcheck="false" title="File name. Editable if you pasted text and want a label.">
           <input type="file" id="fileR" hidden>
         </div>
-        <textarea id="txtR" spellcheck="false" placeholder="Paste or drop the NEW version here"></textarea>
-        <div class="hint">Drop a file anywhere on this box, or paste text.</div>
+        <textarea id="txtR" spellcheck="false" placeholder="NEW version
+
+Click Browse… above to pick a file,
+or drag a file onto this box,
+or paste the code here."></textarea>
+        <div class="hint">Compare runs by itself once both sides are loaded from files.</div>
       </div>
     </div>
   </section>
@@ -1635,7 +1646,7 @@ $('btnHelp').addEventListener('click', () => {
   alert([
     'Vali Code — single file, offline.',
     '',
-    'Files tab: paste or drop two files (or drop two files at once anywhere on the page). Compare runs automatically when both sides come from files; press Compare or Ctrl+Enter after pasting.',
+    'Files tab: click Browse… on each side to pick a file (or drop files on the boxes, or drop two files anywhere on the page, or paste text). The name field next to Browse is just a label; it fills in from the file. Compare runs automatically when both sides come from files; press Compare or Ctrl+Enter after pasting.',
     'Folders tab: pick/drop two folders to see which files differ, then click a row to open it side by side.',
     '',
     'Mode: Auto-detect looks at the content (and file name) and picks SSIS, XML, SQL or plain text. Pick a mode explicitly to override.',

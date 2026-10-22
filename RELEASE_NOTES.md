@@ -1,4 +1,8 @@
-## Vali Code 1.0.0
+## Vali Code 1.0.1
+
+Clearer file loading: a Browse… button on each side, the name field is now a label that fills in from the file, and the empty boxes say what to do.
+
+## 1.0.0
 
 One HTML file. No install, no network, no dependencies. Download `ValiCode.html`, drop it anywhere, double-click it.
 
