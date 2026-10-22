@@ -21,6 +21,10 @@ locked-down Citrix desktop where you can bring a file in but cannot install anyt
   code** and **New code** tabs so you can read either version whole or just the delta.
   The text export has the same shape: summary, then per step OLD CODE / NEW CODE /
   DIFFERENCES.
+- **Object filter** on the SSIS view: show only tasks and containers, data flow
+  components, paths, connection managers, variables and parameters, precedence
+  constraints or event handlers; only added, removed or modified; or type part of a
+  name, path or change description. Counts per category sit next to each checkbox.
 - **Folder compare**: drop or pick two folders, see which files are added, removed or
   modified, click one to open it side by side. Useful for two project checkouts.
 - **Auto-detect**: the default mode sniffs the content (and file name) and picks SSIS,

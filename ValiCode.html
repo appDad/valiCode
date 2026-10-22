@@ -193,6 +193,13 @@
   .codeprop pre { margin: 0; padding: 6px 10px; font: 12px/1.45 var(--mono); white-space: pre-wrap; word-break: break-word; max-height: 60vh; overflow: auto; }
   .codeprop pre.old { background: var(--del-bg); } .codeprop pre.new { background: var(--add-bg); }
 
+  .filterbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg2); font-size: 13px; }
+  .filterbar b { color: var(--fg2); font-weight: 600; }
+  .filterbar .n { color: var(--fg2); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .filterbar input[type=text] { min-width: 180px; }
+  .filterbar .sep { width: 1px; height: 18px; background: var(--border); }
+  .filterbar button.link { border: 0; background: none; color: var(--accent); padding: 0 4px; font-size: 12px; }
+
   footer { font-size: 11px; color: var(--fg2); padding: 6px 16px; border-top: 1px solid var(--border); display: flex; flex-wrap: wrap; gap: 12px; }
   @media (max-width: 800px) {
     .inputs { grid-template-columns: 1fr; }
@@ -320,11 +327,28 @@
     <button id="btnNext" title="Alt+↓">▼ Next</button>
     <span class="pos" id="pos"></span>
     <span class="spacer"></span>
-    <label class="chk" id="lblSame" hidden><input type="checkbox" id="optShowSame"> show unchanged objects</label>
     <button id="btnExpandAll" title="Show every unchanged line">Expand all</button>
     <button id="btnCopy" title="Copy unified diff to clipboard">Copy diff</button>
     <button id="btnSave" title="Save unified diff as .diff text file">Save .diff</button>
     <button id="btnReport" title="Save this comparison as a standalone HTML page">Save report</button>
+  </div>
+  <div class="filterbar" id="ssisFilter" hidden>
+    <b>Show</b>
+    <label class="chk"><input type="checkbox" class="fcat" value="tasks" checked> tasks &amp; containers <span class="n" data-n="tasks"></span></label>
+    <label class="chk"><input type="checkbox" class="fcat" value="components" checked> data flow components <span class="n" data-n="components"></span></label>
+    <label class="chk"><input type="checkbox" class="fcat" value="paths" checked> data flow paths <span class="n" data-n="paths"></span></label>
+    <label class="chk"><input type="checkbox" class="fcat" value="connections" checked> connection managers <span class="n" data-n="connections"></span></label>
+    <label class="chk"><input type="checkbox" class="fcat" value="variables" checked> variables &amp; parameters <span class="n" data-n="variables"></span></label>
+    <label class="chk"><input type="checkbox" class="fcat" value="constraints" checked> precedence constraints <span class="n" data-n="constraints"></span></label>
+    <label class="chk"><input type="checkbox" class="fcat" value="handlers" checked> event handlers <span class="n" data-n="handlers"></span></label>
+    <button class="link" id="fAll">all</button><button class="link" id="fNone">none</button>
+    <span class="sep"></span>
+    <label class="chk"><input type="checkbox" class="fst" value="modified" checked> modified</label>
+    <label class="chk"><input type="checkbox" class="fst" value="added" checked> added</label>
+    <label class="chk"><input type="checkbox" class="fst" value="removed" checked> removed</label>
+    <label class="chk" id="lblSame"><input type="checkbox" id="optShowSame"> unchanged</label>
+    <span class="sep"></span>
+    <input type="text" id="fText" placeholder="filter by name, path or change…" spellcheck="false">
   </div>
   <div class="result" id="result"></div>
 </main>
@@ -1102,7 +1126,7 @@ function finishStats(extra) {
 
 function render() {
   const view = $('view').value;
-  $('lblSame').hidden = !(view === 'ssis' && state.ssis);
+  $('ssisFilter').hidden = !(view === 'ssis' && state.ssis);
   $('btnExpandAll').hidden = (view === 'ssis' && state.ssis);
   $('toolbar').hidden = false;
   if (view === 'ssis' && state.ssis) { renderSsis(); return; }
@@ -1201,22 +1225,48 @@ $('result').addEventListener('click', e => {
 $('result').addEventListener('click', e => {
   const li = e.target.closest('.outline li[data-go]'); if (li) goTo(+li.dataset.go);
 });
+function categoryOf(e, objs) {
+  const k = e.obj.kind;
+  if (k.startsWith('Connection Manager')) return 'connections';
+  if (k === 'Variable' || k === 'Parameter') return 'variables';
+  if (k === 'Precedence Constraint') return 'constraints';
+  if (k === 'Data Flow Path') return 'paths';
+  if (k === 'Event Handler') return 'handlers';
+  const parent = (objs.B.get(parentKeyOf(e.key)) || objs.A.get(parentKeyOf(e.key)));
+  if (parent && parent.kind === 'Data Flow Task' && e.key.indexOf('\\') !== -1) return 'components';
+  return 'tasks';
+}
+function ssisFilter() {
+  const cats = new Set(Array.from(document.querySelectorAll('#ssisFilter .fcat:checked')).map(x => x.value));
+  const sts = new Set(Array.from(document.querySelectorAll('#ssisFilter .fst:checked')).map(x => x.value));
+  if (sts.has('modified')) sts.add('renamed');
+  if ($('optShowSame').checked) sts.add('same');
+  const q = $('fText').value.trim().toLowerCase();
+  return { cats, sts, q };
+}
 function renderSsis() {
   const entries = state.ssis, objs = state.ssisObjs;
-  const showSame = $('optShowSame').checked;
   const counts = { modified: 0, renamed: 0, added: 0, removed: 0, same: 0 };
-  for (const e of entries) counts[e.st]++;
+  const catCounts = {};
+  for (const e of entries) { counts[e.st]++; e.cat = categoryOf(e, objs); if (e.st !== 'same') catCounts[e.cat] = (catCounts[e.cat] || 0) + 1; }
+  document.querySelectorAll('#ssisFilter .n').forEach(n => { const c = catCounts[n.dataset.n] || 0; n.textContent = c ? `(${c})` : ''; });
+  const f = ssisFilter();
+  const visible = e => f.cats.has(e.cat) && f.sts.has(e.st) &&
+    (!f.q || (e.key + ' ' + e.obj.name + ' ' + e.obj.kind + ' ' + (e.st === 'same' ? '' : describe(e))).toLowerCase().indexOf(f.q) !== -1);
+  const shown = entries.filter(visible);
   const changed = counts.modified + counts.renamed + counts.added + counts.removed;
+  const shownChanged = shown.filter(e => e.st !== 'same').length;
   const pkg = objs.B.get('Package') || objs.A.get('Package');
   const html = ['<div class="cards">'];
   html.push(`<div class="summary"><b>${pkg ? escHtml(pkg.name) + ': ' : ''}${changed ? changed + ' object' + (changed === 1 ? '' : 's') + ' changed' : 'no functional changes'}</b>` +
-    `<span>${counts.modified} modified</span><span>${counts.renamed} renamed/moved</span><span>${counts.added} added</span><span>${counts.removed} removed</span><span>${counts.same} unchanged</span></div>`);
+    `<span>${counts.modified} modified</span><span>${counts.renamed} renamed/moved</span><span>${counts.added} added</span><span>${counts.removed} removed</span><span>${counts.same} unchanged</span>` +
+    (shownChanged !== changed ? `<span class="err">filter: showing ${shownChanged} of ${changed}</span>` : '') + `</div>`);
   // 1. Plain-language index of every change.
   let blk = 0;
   const blkOf = new Map();
-  if (changed) {
+  if (shownChanged) {
     html.push('<ol class="outline">');
-    for (const e of entries) {
+    for (const e of shown) {
       if (e.st === 'same') continue;
       blkOf.set(e, blk);
       const cr = crumbs(e.key, objs).map(c => `<span class="crumb">${escHtml(c.name)}</span>`).join('');
@@ -1226,8 +1276,7 @@ function renderSsis() {
   }
   // 2. Cards grouped by container / data flow.
   let lastGroup = null;
-  for (const e of entries) {
-    if (e.st === 'same' && !showSame) continue;
+  for (const e of shown) {
     const o = e.obj;
     const cr = crumbs(e.key, objs);
     const groupKey = cr.map(c => c.name).join(' › ');
@@ -1247,6 +1296,7 @@ function renderSsis() {
     const blkAttr = blkOf.has(e) ? ` data-blk="${blkOf.get(e)}"` : '';
     html.push(`<div class="card ${e.st}"${blkAttr}>${head}${body}</div>`);
   }
+  if (!shown.length) html.push('<div class="msg">Nothing matches the current filter.</div>');
   html.push('</div>');
   state.nblocks = blk;
   $('result').innerHTML = html.join('');
@@ -1541,9 +1591,15 @@ function setMode(m) {
   $('tabFiles').classList.toggle('on', files); $('tabFolders').classList.toggle('on', !files);
   $('options').style.display = files ? '' : 'none';
   $('toolbar').style.display = files ? '' : 'none';
+  $('ssisFilter').style.display = files ? '' : 'none';
   $('result').style.display = files ? '' : 'none';
 }
 $('view').addEventListener('change', () => { state.viewChosen = true; });
+document.querySelectorAll('#ssisFilter .fcat, #ssisFilter .fst').forEach(x => x.addEventListener('change', () => { if (state.ssis) render(); }));
+let fTimer = null;
+$('fText').addEventListener('input', () => { clearTimeout(fTimer); fTimer = setTimeout(() => { if (state.ssis) render(); }, 150); });
+$('fAll').addEventListener('click', () => { document.querySelectorAll('#ssisFilter .fcat').forEach(x => x.checked = true); if (state.ssis) render(); });
+$('fNone').addEventListener('click', () => { document.querySelectorAll('#ssisFilter .fcat').forEach(x => x.checked = false); if (state.ssis) render(); });
 $('tabFiles').addEventListener('click', () => setMode('files'));
 $('tabFolders').addEventListener('click', () => setMode('folders'));
 $('btnCompare').addEventListener('click', compare);
@@ -1584,7 +1640,7 @@ $('btnHelp').addEventListener('click', () => {
     '',
     'Mode: Auto-detect looks at the content (and file name) and picks SSIS, XML, SQL or plain text. Pick a mode explicitly to override.',
     'SQL: keywords are uppercased, [brackets] dropped from plain names, comments ignored, and the statement laid out one clause and one column per line, so re-indented or re-cased code does not light up. Turn any of these off under SQL options. The same rules apply to SQL inside SSIS tasks and components.',
-    'SSIS package: both .dtsx files are parsed into their objects (tasks, containers, data flow components, connection managers, variables, constraints, script code) and compared object by object. IDs, GUIDs, timestamps, build numbers and designer layout are ignored, so you see which task changed and what inside it, e.g. the old and new SQL of an Execute SQL Task. The index at the top reads package > container > step > what changed; each code change has Differences / Old code / New code tabs. Switch View to Side by side / Unified for the normalised XML text.',
+    'SSIS package: both .dtsx files are parsed into their objects (tasks, containers, data flow components, connection managers, variables, constraints, script code) and compared object by object. IDs, GUIDs, timestamps, build numbers and designer layout are ignored, so you see which task changed and what inside it, e.g. the old and new SQL of an Execute SQL Task. Use the filter bar to show only tasks, data flow components, variables, connection managers etc., only added/removed/modified, or search by name. The index at the top reads package > container > step > what changed; each code change has Differences / Old code / New code tabs. Switch View to Side by side / Unified for the normalised XML text.',
     '',
     'Shortcuts: Ctrl+Enter compare · Alt+↓ / Alt+↑ next/prev change · Esc jump back to inputs',
     '',

@@ -68,7 +68,7 @@ await page.click('#btnCompare');
 const stats = await page.textContent('#stats');
 check(/\+10/.test(stats) && /−2/.test(stats), `SQL view diff stats (canonical layout): ${stats.trim()}`);
 check((await page.$$('#result tr.add')).length === 8 && (await page.$$('#result tr.mod')).length === 2, 'SQL view: 8 added rows (incl. 4-line CASE), 2 modified rows');
-check(!(await page.isVisible('#lblSame')), 'SSIS-only control hidden in text views');
+check(!(await page.isVisible('#ssisFilter')), 'SSIS filter bar hidden in text views');
 await page.screenshot({ path: path.join(root, 'test/out-sql.png'), fullPage: true });
 
 // 2b. SQL-aware: same logic, different formatting -> identical. Real change -> reported.
@@ -133,6 +133,20 @@ const idx = await page.textContent('#result .outline');
 check(/Load Staging\s*›?\s*Source Sales \(OLE DB Source\) — SQL changed/.test(idx), 'index sentence: Load Staging › Source Sales — SQL changed');
 check(/BatchSize \(Variable\) — value: 5000 → 10000/.test(idx), 'index sentence: variable value 5000 → 10000');
 check(/Notify \(Send Mail Task\) — new Send Mail Task/.test(idx), 'index sentence: new task');
+// Object filter
+check(await page.isVisible('#ssisFilter'), 'filter bar visible in SSIS view');
+await page.uncheck('#ssisFilter .fcat[value="tasks"]'); await page.uncheck('#ssisFilter .fcat[value="connections"]'); await page.uncheck('#ssisFilter .fcat[value="constraints"]'); await page.uncheck('#ssisFilter .fcat[value="variables"]');
+check((await page.$$('#result .card')).length === 3, 'category filter: only the 3 data flow components remain');
+check((await page.textContent('#result .summary')).includes('showing 3 of 10'), 'summary shows filtered count');
+await page.click('#fAll');
+await page.uncheck('#ssisFilter .fst[value="modified"]');
+check((await page.$$('#result .card')).length === 3, 'status filter: 3 added objects');
+await page.check('#ssisFilter .fst[value="modified"]');
+await page.fill('#fText', 'sql changed'); await page.waitForTimeout(300);
+check((await page.$$('#result .card')).length === 2, 'text filter "sql changed" leaves the 2 SQL-bearing steps');
+await page.fill('#fText', ''); await page.waitForTimeout(300);
+check((await page.$$('#result .card')).length === 10, 'clearing filter restores all 10');
+check((await page.textContent('#ssisFilter .n[data-n="components"]')) === '(3)', 'category count label');
 // Old code / New code tabs
 await page.click('#result .codeprop .tabs button[data-m="old"]');
 check(await page.isVisible('#result .codeprop pre.old'), 'Old code tab shows full old text');
