@@ -23,8 +23,18 @@ locked-down Citrix desktop where you can bring a file in but cannot install anyt
   DIFFERENCES.
 - **Folder compare**: drop or pick two folders, see which files are added, removed or
   modified, click one to open it side by side. Useful for two project checkouts.
-- **Ignore options**: whitespace, case, blank lines. **Presets** for SQL, generic XML
-  (pretty-printed one attribute per line) and SSIS.
+- **Auto-detect**: the default mode sniffs the content (and file name) and picks SSIS,
+  XML, SQL or plain text. Override with the Mode dropdown.
+- **SQL-aware compare**: scripts are tokenised and normalised before diffing, so a
+  re-indented, re-cased, `[bracketed]` or re-commented copy of the same logic comes out
+  identical, and a real edit shows as the one or two lines it is. Keywords are
+  uppercased, plain `[names]` lose their brackets, comments are ignored, and the
+  statement is laid out one clause and one select-list item per line with nesting
+  indented. Each rule is a checkbox under SQL options. The same normaliser runs on SQL
+  inside SSIS tasks and data flow components, so an Execute SQL Task whose statement
+  was only reformatted is reported as unchanged.
+- **Ignore options**: whitespace, case, blank lines. Generic XML mode pretty-prints one
+  attribute per line.
 - **Export**: copy or save a standard unified `.diff`, or save the current view as a
   standalone HTML report. For SSIS the text export is an object-by-object change log.
 - Light/dark theme, keyboard shortcuts (Ctrl+Enter, Alt+Up/Down, Esc), settings

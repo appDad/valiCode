@@ -66,18 +66,39 @@ await page.fill('#txtL', sql1); await page.fill('#txtR', sql2);
 await page.selectOption('#preset', 'sql');
 await page.click('#btnCompare');
 const stats = await page.textContent('#stats');
-check(/\+6/.test(stats) && /−2/.test(stats), `SQL view diff stats: ${stats.trim()}`);
-check((await page.$$('#result tr.add')).length === 4 && (await page.$$('#result tr.mod')).length === 2, 'SQL view: 4 added rows, 2 modified rows');
+check(/\+10/.test(stats) && /−2/.test(stats), `SQL view diff stats (canonical layout): ${stats.trim()}`);
+check((await page.$$('#result tr.add')).length === 8 && (await page.$$('#result tr.mod')).length === 2, 'SQL view: 8 added rows (incl. 4-line CASE), 2 modified rows');
 check(!(await page.isVisible('#lblSame')), 'SSIS-only control hidden in text views');
 await page.screenshot({ path: path.join(root, 'test/out-sql.png'), fullPage: true });
+
+// 2b. SQL-aware: same logic, different formatting -> identical. Real change -> reported.
+await page.selectOption('#preset', 'auto');
+const sqlA = `select [p].[PatientID], p.MRN,\n   isnull(e.AdmitDate,'1900-01-01') as AdmitDate -- default\nfrom [dbo].[Patient] p\n  inner join dbo.Encounter e on e.PatientID=p.PatientID\nwhere e.IsDeleted=0 and e.AdmitDate >= '2020-01-01'`;
+const sqlB = `SELECT p.PatientID,\n       p.MRN,\n       ISNULL(e.AdmitDate, '1900-01-01') AS AdmitDate /* default */\nFROM dbo.Patient p\nINNER JOIN dbo.Encounter e ON e.PatientID = p.PatientID\nWHERE e.IsDeleted = 0\n  AND e.AdmitDate >= '2020-01-01'`;
+await page.fill('#txtL', sqlA); await page.fill('#txtR', sqlB); await page.fill('#nameL', ''); await page.fill('#nameR', '');
+await page.click('#btnCompare');
+check((await page.textContent('#detected')).includes('detected: SQL'), 'auto-detect picks SQL from content');
+check((await page.textContent('#stats')).includes('Identical'), 'SQL-aware: reformatted/recased/bracketed/commented copy is identical');
+await page.fill('#txtR', sqlB.replace("'2020-01-01'", "'2021-01-01'").replace('e.IsDeleted = 0', 'e.IsDeleted = 0\n  AND e.IsTest = 0'));
+await page.click('#btnCompare');
+const sqlStats = await page.textContent('#stats');
+check(/\+2/.test(sqlStats) && /−1/.test(sqlStats), `SQL-aware: real change shows +2/−1 only: ${sqlStats.trim()}`);
+await page.uncheck('#sqlLayout'); await page.click('#btnCompare');
+check(!(await page.textContent('#stats')).includes('Identical'), 'turning off canonical layout changes the result (option is live)');
+await page.check('#sqlLayout');
+check((await page.evaluate(() => window.ValiCode.sniff('<?xml version="1.0"?><DTS:Executable xmlns:DTS="www.microsoft.com/SqlServer/Dts"/>'))) === 'ssis', 'sniff: dtsx');
+check((await page.evaluate(() => window.ValiCode.sniff('<root><a/></root>'))) === 'xml', 'sniff: xml');
+check((await page.evaluate(() => window.ValiCode.sniff('just some notes\nabout things'))) === 'text', 'sniff: text');
+check((await page.evaluate(() => window.ValiCode.sniff('x', 'thing.sql'))) === 'sql', 'sniff: .sql extension wins');
 
 // 3. SSIS object compare.
 const d1 = readFileSync(path.join(root, 'samples/LoadSales_v1.dtsx'), 'utf8');
 const d2 = readFileSync(path.join(root, 'samples/LoadSales_v2.dtsx'), 'utf8');
 await page.fill('#txtL', d1); await page.fill('#txtR', d2);
 await page.fill('#nameL', 'LoadSales_v1.dtsx'); await page.fill('#nameR', 'LoadSales_v2.dtsx');
-await page.selectOption('#preset', 'ssis');
 await page.click('#btnCompare');
+check((await page.textContent('#detected')).includes('SSIS'), 'auto-detect picks SSIS');
+check((await page.$eval('#view', v => v.value)) === 'ssis', 'auto-detect switches to the SSIS object view');
 const ssis = await page.evaluate(() => window.CodeCompare.state.ssis.map(e => ({ st: e.st, key: e.key, kind: e.obj.kind, changes: e.changes.map(c => c.name) })));
 const byKey = Object.fromEntries(ssis.map(e => [e.key, e]));
 const expect = (key, st, propsIncluded = []) => {
@@ -120,6 +141,13 @@ await page.click('#result .outline li[data-go="5"]');
 check((await page.getAttribute('#result .card.cur', 'data-blk')) === '5', 'clicking index entry focuses its card');
 await page.screenshot({ path: path.join(root, 'test/out-ssis.png'), fullPage: true });
 
+// SQL inside a task re-cased and re-indented only -> still no functional change
+await page.fill('#txtR', d1.replace('SQLTask:SqlStatementSource="TRUNCATE TABLE stg.Sales;"', 'SQLTask:SqlStatementSource="truncate   table [stg].[Sales]  ;"'));
+await page.click('#btnCompare');
+check(await page.evaluate(() => window.ValiCode.state.ssis.every(e => e.st === 'same')), 'SQL-aware applies inside SSIS tasks (recased SQL is not a change)');
+await page.uncheck('#sqlCase'); await page.uncheck('#sqlBrackets'); await page.click('#btnCompare');
+check(!(await page.evaluate(() => window.ValiCode.state.ssis.every(e => e.st === 'same'))), 'with SQL options off the recased SQL is reported');
+await page.check('#sqlCase'); await page.check('#sqlBrackets');
 // identical packages differing only by noise -> no changes
 await page.fill('#txtR', d1.replace('DTS:VersionBuild="17"', 'DTS:VersionBuild="99"').replace('TopLeft="138,61"', 'TopLeft="1,1"'));
 await page.click('#btnCompare');

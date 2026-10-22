@@ -269,11 +269,13 @@
   <div class="options" id="options">
     <span class="grp"><b>Mode</b>
       <select id="preset" title="Normalisation preset applied to both sides before diffing">
+        <option value="auto">Auto-detect</option>
         <option value="text">Plain text</option>
         <option value="sql">SQL / T-SQL</option>
         <option value="xml">XML (pretty-print)</option>
         <option value="ssis">SSIS package (.dtsx)</option>
       </select>
+      <span id="detected" style="color:var(--fg2);font-size:12px"></span>
     </span>
     <span class="grp"><b>Ignore</b>
       <label class="chk"><input type="checkbox" id="optTrim"> leading/trailing space</label>
@@ -288,6 +290,16 @@
       <label class="chk">context <input type="number" id="optCtx" min="0" max="50" value="3"></label>
       <label class="chk"><input type="checkbox" id="optInline" checked> highlight within line</label>
     </span>
+    <details class="adv" id="advSql" open>
+      <summary>SQL options (also applied to SQL inside SSIS tasks)</summary>
+      <div class="body">
+        <label class="chk"><input type="checkbox" id="sqlLayout" checked> canonical layout (one clause / column per line)</label>
+        <label class="chk"><input type="checkbox" id="sqlAndOr" checked> AND / OR on own line</label>
+        <label class="chk"><input type="checkbox" id="sqlCase" checked> uppercase keywords</label>
+        <label class="chk"><input type="checkbox" id="sqlBrackets" checked> drop [brackets] on plain names</label>
+        <label class="chk"><input type="checkbox" id="sqlComments" checked> ignore comments</label>
+      </div>
+    </details>
     <details class="adv" id="adv">
       <summary>XML / SSIS options</summary>
       <div class="body">
@@ -493,14 +505,131 @@ function xmlNormalize(text, o) {
   return lines.join('\n');
 }
 
-function sqlNormalize(text) {
-  // Keep statement structure, drop trailing whitespace, unify line endings, collapse tabs.
-  return text.replace(/\r\n?/g, '\n').replace(/\t/g, '    ').replace(/[ \t]+$/gm, '');
+/* ===================================================================
+   SQL-aware normalisation (T-SQL flavoured, tolerant of anything).
+   Tokenises the script, then optionally: uppercases keywords, strips
+   comments, drops [brackets] from plain identifiers, and re-lays the
+   statement out canonically (one clause per line, one select-list item
+   per line, indentation by nesting) so re-indented code diffs clean.
+   =================================================================== */
+const SQL_KEYWORDS = new Set(('ADD ALL ALTER AND ANY AS ASC AUTHORIZATION BACKUP BEGIN BETWEEN BREAK BROWSE BULK BY CASCADE CASE CATCH CHECK CHECKPOINT CLOSE CLUSTERED ' +
+  'COLLATE COLUMN COMMIT COMPUTE CONSTRAINT CONTAINS CONTINUE CREATE CROSS CURRENT CURSOR DATABASE DEALLOCATE DECLARE DEFAULT DELETE DENY DESC DISTINCT DISTRIBUTED DROP ' +
+  'ELSE END ERRORLVL ESCAPE EXCEPT EXEC EXECUTE EXISTS EXIT EXTERNAL FETCH FILE FILLFACTOR FOR FOREIGN FREETEXT FROM FULL FUNCTION GO GOTO GRANT GROUP HAVING HOLDLOCK IDENTITY ' +
+  'IF IN INDEX INNER INSERT INTERSECT INTO IS JOIN KEY KILL LEFT LIKE LINENO MERGE NATIONAL NOCHECK NOCOUNT NONCLUSTERED NOT NULL OF OFF OFFSETS ON OPEN OPTION OR ORDER OUTER ' +
+  'OUTPUT OVER PERCENT PIVOT PLAN PRECISION PRIMARY PRINT PROC PROCEDURE PUBLIC RAISERROR READ READTEXT RECONFIGURE REFERENCES REPLICATION RESTORE RESTRICT RETURN REVERT REVOKE ' +
+  'RIGHT ROLLBACK ROWCOUNT ROWGUIDCOL RULE SAVE SCHEMA SELECT SET SETUSER SHUTDOWN SOME STATISTICS TABLE TABLESAMPLE TEXTSIZE THEN THROW TO TOP TRAN TRANSACTION TRIGGER TRUNCATE TRY ' +
+  'UNION UNIQUE UNPIVOT UPDATE UPDATETEXT USE VALUES VARYING VIEW WAITFOR WHEN WHERE WHILE WITH WITHIN WRITETEXT APPLY MATCHED SOURCE TARGET USING ELSE RETURNS NOLOCK ' +
+  'PARTITION ROWS RANGE PRECEDING FOLLOWING UNBOUNDED FIRST LAST LIMIT').split(' '));
+// Built-in functions: uppercased with keywords (T-SQL is case-insensitive here) but never treated as clause words.
+const SQL_FUNCS = new Set(('ISNULL COALESCE NULLIF IIF CHOOSE CAST CONVERT TRY_CAST TRY_CONVERT PARSE TRY_PARSE COUNT COUNT_BIG SUM AVG MIN MAX STDEV STDEVP VAR VARP ' +
+  'STRING_AGG STRING_SPLIT CONCAT CONCAT_WS LEN DATALENGTH LEFT RIGHT SUBSTRING CHARINDEX PATINDEX REPLACE REPLICATE REVERSE STUFF LTRIM RTRIM TRIM UPPER LOWER ' +
+  'FORMAT STR CHAR NCHAR ASCII UNICODE QUOTENAME SPACE GETDATE GETUTCDATE SYSDATETIME SYSUTCDATETIME SYSDATETIMEOFFSET CURRENT_TIMESTAMP DATEADD DATEDIFF ' +
+  'DATEDIFF_BIG DATEPART DATENAME DAY MONTH YEAR EOMONTH DATEFROMPARTS DATETIMEFROMPARTS ISDATE ROUND FLOOR CEILING ABS SIGN POWER SQRT SQUARE EXP LOG LOG10 ' +
+  'RAND NEWID NEWSEQUENTIALID ROW_NUMBER RANK DENSE_RANK NTILE LAG LEAD FIRST_VALUE LAST_VALUE OBJECT_ID OBJECT_NAME SCHEMA_NAME DB_NAME USER_NAME SUSER_SNAME ' +
+  'SCOPE_IDENTITY IDENT_CURRENT ISNUMERIC ERROR_MESSAGE ERROR_NUMBER ERROR_LINE ERROR_PROCEDURE ERROR_SEVERITY ERROR_STATE XACT_STATE HASHBYTES CHECKSUM ' +
+  'JSON_VALUE JSON_QUERY ISJSON OPENJSON OPENQUERY OPENROWSET OPENXML GROUPING GROUPING_ID TRANSLATE SOUNDEX DIFFERENCE').split(' '));
+// Words that start a new line in canonical layout.
+const SQL_CLAUSE = new Set('SELECT FROM WHERE GROUP HAVING ORDER UNION EXCEPT INTERSECT INSERT UPDATE DELETE MERGE SET VALUES INTO JOIN INNER LEFT RIGHT FULL CROSS OUTER ON WHEN ELSE DECLARE BEGIN END IF WHILE RETURN WITH GO CREATE ALTER DROP EXEC EXECUTE OUTPUT OPTION USING PRINT THROW TRUNCATE TRY CATCH COMMIT ROLLBACK USE'.split(' '));
+// Words that do not get a newline when they follow another clause word (e.g. "LEFT OUTER JOIN", "GROUP BY", "INSERT INTO", "BEGIN TRY").
+const SQL_CONTINUES = new Set('JOIN OUTER INNER BY INTO TRY CATCH TRAN TRANSACTION MATCHED NOT EXISTS'.split(' '));
+// Words that get a space before "(" (everything else is treated as a function call).
+const SQL_SPACE_PAREN = new Set('IN VALUES AND OR NOT EXISTS ON WHERE SELECT FROM AS THEN ELSE WHEN SET JOIN BY = <> != < > <= >= , ( + - * / % LIKE BETWEEN OVER UNION EXCEPT INTERSECT INSERT UPDATE DELETE MERGE USING WITH IF WHILE RETURN TOP ANY ALL SOME INTO'.split(' '));
+
+function sqlTokenize(text) {
+  const re = /(--[^\n]*)|(\/\*[\s\S]*?\*\/)|(N?'(?:[^']|'')*')|("(?:[^"]|"")*")|(\[[^\]]*\])|(@@?[A-Za-z_]\w*|##?[A-Za-z_]\w*|[A-Za-z_][\w$]*)|(\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)|(\r?\n)|([ \t\f\v]+)|(<>|!=|<=|>=|\|\||::|[-+*\/%=<>!&|^~])|([(),;.])|(.)/g;
+  const out = [];
+  let m;
+  while ((m = re.exec(text))) {
+    const v = m[0];
+    let t = 'other';
+    if (m[1]) t = 'lcomment'; else if (m[2]) t = 'bcomment'; else if (m[3]) t = 'str'; else if (m[4]) t = 'qident'; else if (m[5]) t = 'bident';
+    else if (m[6]) t = 'word'; else if (m[7]) t = 'num'; else if (m[8]) t = 'nl'; else if (m[9]) t = 'ws'; else if (m[10]) t = 'op'; else if (m[11]) t = 'punct';
+    out.push({ t, v });
+  }
+  return out;
 }
+function sqlNormalize(text, o) {
+  text = text.replace(/\r\n?/g, '\n');
+  let toks = sqlTokenize(text);
+  // token-level rewrites
+  toks = toks.map(tk => {
+    if (tk.t === 'word') { const up = tk.v.toUpperCase(); if (o.sqlCase && SQL_KEYWORDS.has(up)) return { t: 'word', v: up, kw: true }; if (o.sqlCase && SQL_FUNCS.has(up)) return { t: 'word', v: up, kw: false, up }; return { t: 'word', v: tk.v, kw: SQL_KEYWORDS.has(up), up }; }
+    if (tk.t === 'bident' && o.sqlBrackets) { const inner = tk.v.slice(1, -1); if (/^[A-Za-z_][\w$]*$/.test(inner) && !SQL_KEYWORDS.has(inner.toUpperCase())) return { t: 'word', v: inner, kw: false, up: inner.toUpperCase() }; }
+    return tk;
+  });
+  if (o.sqlComments) toks = toks.filter(tk => tk.t !== 'lcomment' && tk.t !== 'bcomment');
+  if (!o.sqlLayout) {
+    // Keep the author's layout; just trim trailing whitespace per line.
+    return toks.map(tk => tk.v).join('').replace(/[ \t]+$/gm, '').replace(/\n{3,}/g, '\n\n');
+  }
+  // Canonical layout.
+  toks = toks.filter(tk => tk.t !== 'ws' && tk.t !== 'nl');
+  const lines = [];
+  let line = [], depth = 0, caseDepth = 0, clauseDepth = [0], prev = null, lineIndent = 0;
+  const flush = () => { if (line.length) lines.push(' '.repeat(lineIndent) + line.join('')); line = []; };
+  const newline = (indent) => { flush(); lineIndent = indent; };
+  const keyOf = tk => tk.t === 'word' ? (tk.kw ? tk.v.toUpperCase() : null) : tk.v;
+  for (let i = 0; i < toks.length; i++) {
+    const tk = toks[i];
+    const k = keyOf(tk), pk = prev ? keyOf(prev) : null;
+    const base = depth * 4 + caseDepth * 4;
+    if (tk.t === 'lcomment' || tk.t === 'bcomment') { newline(base); line.push(tk.v.trim()); newline(base); prev = tk; continue; }
+    if (tk.t === 'word' && tk.kw && (k === 'LEFT' || k === 'RIGHT') && toks[i + 1] && toks[i + 1].v === '(') { tk.kw = false; }
+    if (tk.t === 'word' && tk.kw) {
+      if (k === 'CASE') { if (line.length) line.push(' '); line.push(tk.v); caseDepth++; prev = tk; continue; }
+      if (k === 'END' && caseDepth > 0 && !(pk === 'BEGIN')) { caseDepth--; newline(depth * 4 + caseDepth * 4 + 4); line.push(tk.v); prev = tk; continue; }
+      if (SQL_CLAUSE.has(k)) {
+        const continues = SQL_CONTINUES.has(k) && prev && prev.t === 'word' && prev.kw && (SQL_CLAUSE.has(pk) || SQL_CONTINUES.has(pk));
+        const andOr = false;
+        if (!continues && !(k === 'SET' && pk === 'NOCOUNT') && !(k === 'ON' && (pk === 'NOCOUNT' || pk === 'IDENTITY_INSERT' || prev && prev.t === 'word' && /^(NOCOUNT|XACT_ABORT|ANSI_NULLS|QUOTED_IDENTIFIER)$/i.test(prev.v)))) {
+          if (k === 'WHEN' || k === 'ELSE') newline(base + (caseDepth ? 4 : 0)); else newline(base);
+        } else if (line.length) line.push(' ');
+        line.push(tk.v); clauseDepth[depth] = depth; prev = tk; continue;
+      }
+      if ((k === 'AND' || k === 'OR') && o.sqlAndOr && depth === (clauseDepth[depth] ?? depth)) { newline(base + 2); line.push(tk.v); prev = tk; continue; }
+    }
+    if (tk.t === 'punct') {
+      if (tk.v === ',') { line.push(','); if (depth === (clauseDepth[depth] ?? depth)) newline(base + 4); prev = tk; continue; }
+      if (tk.v === ';') { line.push(';'); newline(base); prev = tk; continue; }
+      if (tk.v === '(') {
+        const fn = prev && (prev.t === 'word' && !SQL_SPACE_PAREN.has(pk) || prev.t === 'qident' || prev.t === 'bident');
+        if (line.length && !fn && prev && prev.v !== '(') line.push(' ');
+        line.push('('); depth++; clauseDepth[depth] = depth + 1; prev = tk; continue;
+      }
+      if (tk.v === ')') { depth = Math.max(0, depth - 1); line.push(')'); prev = tk; continue; }
+      if (tk.v === '.') { line.push('.'); prev = tk; continue; }
+    }
+    // ordinary token
+    const noSpace = !line.length || (prev && (prev.v === '(' || prev.v === '.' || (prev.t === 'op' && /^[-~]$/.test(prev.v) && (!toks[i - 2] || /[(,=]/.test(toks[i - 2].v) || toks[i - 2].kw)))) || (tk.t === 'punct' && tk.v === '.');
+    if (!noSpace) line.push(' ');
+    line.push(tk.v);
+    prev = tk;
+    if (tk.t === 'word' && tk.v.toUpperCase() === 'GO' && tk.kw) newline(0);
+  }
+  flush();
+  return lines.join('\n').replace(/[ \t]+$/gm, '');
+}
+
+/* Content sniffing for auto mode. Returns 'ssis' | 'xml' | 'sql' | 'text'. */
+function sniff(text, name) {
+  const ext = ((name || '').split('.').pop() || '').toLowerCase();
+  if (['dtsx', 'conmgr', 'params'].includes(ext)) return 'ssis';
+  if (ext === 'sql') return 'sql';
+  const head = text.slice(0, 6000).replace(/^\uFEFF/, '').trimStart();
+  if (/^</.test(head)) {
+    if (/www\.microsoft\.com\/SqlServer\/Dts|<DTS:Executable\b|<DTS:ConnectionManager\b/i.test(head)) return 'ssis';
+    if (/^<\?xml|^<[A-Za-z_][\w:.-]*[\s>\/]/.test(head)) return 'xml';
+  }
+  if (/^(CREATE|ALTER|SELECT|WITH|DECLARE|USE|SET|IF|BEGIN|MERGE|INSERT|UPDATE|DELETE|EXEC|EXECUTE|TRUNCATE|DROP|GO|PRINT|WHILE)\b/i.test(head.replace(/^(--[^\n]*\n|\/\*[\s\S]*?\*\/\s*)+/, ''))) return 'sql';
+  const hits = (head.match(/\b(SELECT|FROM|WHERE|JOIN|INSERT|UPDATE|DELETE|CREATE|ALTER|PROCEDURE|PROC|VIEW|FUNCTION|TABLE|DECLARE|BEGIN|END|EXEC|MERGE|NOCOUNT|GO|AS|ON|AND|SET)\b/gi) || []).length;
+  const words = (head.match(/\w+/g) || []).length;
+  return words && hits / words > 0.08 && hits >= 4 ? 'sql' : 'text';
+}
+
 
 function applyPreset(text, opts) {
   switch (opts.preset) {
-    case 'sql': return { text: sqlNormalize(text) };
+    case 'sql': return { text: sqlNormalize(text, opts) };
     case 'xml': {
       const n = xmlNormalize(text, { attrLines: opts.xAttrLines, sortAttrs: opts.xSortAttrs, stripLayout: false, stripStamps: false, stripIds: false, extra: opts.xExtra });
       return n === null ? { text, warn: 'Not well-formed XML; compared as plain text.' } : { text: n };
@@ -833,6 +962,10 @@ const SSIS = (() => {
     return objs;
   }
 
+  function isSqlProp(name, a, b) {
+    if (/SqlStatementSource|SqlCommand$|\.SqlCommand\b|SqlCommandParam/.test(name)) return true;
+    return (a.indexOf('\n') !== -1 || b.indexOf('\n') !== -1 || a.length > 60) && sniff(a) === 'sql' && sniff(b) === 'sql';
+  }
   function norm(v, opts) {
     let s = (v ?? '').replace(/\r\n?/g, '\n');
     if (opts.ws) s = s.replace(/\s+/g, '');
@@ -855,7 +988,11 @@ const SSIS = (() => {
         const va = oa.props.get(k), vb = ob.props.get(k);
         if (va === undefined) changes.push({ name: k, old: undefined, new: vb });
         else if (vb === undefined) changes.push({ name: k, old: va, new: undefined });
-        else if (norm(va, opts) !== norm(vb, opts)) changes.push({ name: k, old: va, new: vb });
+        else {
+          const sql = opts.sqlNorm && isSqlProp(k, va, vb);
+          const na = sql ? opts.sqlNorm(va) : va, nb = sql ? opts.sqlNorm(vb) : vb;
+          if (norm(na, opts) !== norm(nb, opts)) changes.push({ name: k, old: va, new: vb, sql });
+        }
       }
       return changes;
     }
@@ -883,7 +1020,7 @@ const SSIS = (() => {
     return kept;
   }
 
-  return { parse, diff, kindOf };
+  return { parse, diff, kindOf, isSqlProp };
 })();
 
 /* ===================================================================
@@ -1038,9 +1175,10 @@ function propRows(changes) {
   const out = [];
   for (const c of changes) {
     if (isBig(c.old) || isBig(c.new)) {
-      const m = miniDiff(c.old, c.new);
+      const sql = c.sql || (state.opts && state.opts.sqlNorm && c.old !== undefined && c.new !== undefined && SSIS.isSqlProp(c.name, c.old, c.new));
+      const m = sql ? miniDiff(state.opts.sqlNorm(c.old), state.opts.sqlNorm(c.new)) : miniDiff(c.old, c.new);
       const delta = `<span class="delta"><span class="a">+${m.add}</span> <span class="d">−${m.del}</span></span>`;
-      out.push(`<tr><td class="big" colspan="3"><div class="codeprop"><div class="pn">${escHtml(c.name)} ${delta}` +
+      out.push(`<tr><td class="big" colspan="3"><div class="codeprop"><div class="pn">${escHtml(c.name)}${sql ? ' <span class="kind">(SQL-aware)</span>' : ''} ${delta}` +
         `<span class="tabs"><button data-m="diff" class="on">Differences</button><button data-m="old">Old code</button><button data-m="new">New code</button></span></div>` +
         `<div class="m diff">${m.html}</div><div class="m old" hidden><pre class="old">${escHtml(c.old ?? '(none)')}</pre></div><div class="m new" hidden><pre class="new">${escHtml(c.new ?? '(none)')}</pre></div></div></td></tr>`);
       continue;
@@ -1169,7 +1307,7 @@ function unifiedText() {
   return unifiedFromRows(state.rows, state.names[0], state.names[1]);
 }
 function ssisText() {
-  const opts = getOpts();
+  const opts = state.opts || getOpts();
   const objs = state.ssisObjs;
   const pkg = objs.B.get('Package') || objs.A.get('Package');
   const rule = '='.repeat(72), thin = '-'.repeat(72);
@@ -1183,8 +1321,10 @@ function ssisText() {
     out.push(rule, `${i + 1}. ${[...crumbs(e.key, objs).map(c => c.name), e.obj.name].join(' > ')}`, `   ${e.obj.kind} - ${e.st.toUpperCase()}`, `   ${e.key}`, rule);
     for (const c of e.changes) {
       if (isBig(c.old) || isBig(c.new)) {
-        out.push('', `${c.name}`, thin, 'OLD CODE:', c.old ?? '(none)', thin, 'NEW CODE:', c.new ?? '(none)', thin, 'DIFFERENCES:');
-        out.push(unifiedFromRows(buildRows(splitLines(c.old ?? ''), splitLines(c.new ?? ''), opts), 'old', 'new').trimEnd());
+        const sql = c.sql && opts.sqlNorm;
+        out.push('', `${c.name}${sql ? ' (SQL-aware compare)' : ''}`, thin, 'OLD CODE:', c.old ?? '(none)', thin, 'NEW CODE:', c.new ?? '(none)', thin, 'DIFFERENCES:');
+        const oa = sql ? opts.sqlNorm(c.old ?? '') : (c.old ?? ''), ob = sql ? opts.sqlNorm(c.new ?? '') : (c.new ?? '');
+        out.push(unifiedFromRows(buildRows(splitLines(oa), splitLines(ob), opts), 'old', 'new').trimEnd());
       } else if (c.old === undefined) out.push(`  + ${c.name} = ${c.new}`);
       else if (c.new === undefined) out.push(`  - ${c.name} = ${c.old}`);
       else out.push(`  ~ ${c.name}: ${c.old}  ->  ${c.new}`);
@@ -1219,6 +1359,7 @@ function getOpts() {
     xAttrLines: $('xAttrLines').checked, xSortAttrs: $('xSortAttrs').checked, xStripLayout: $('xStripLayout').checked,
     xStripStamps: $('xStripStamps').checked, xStripIds: $('xStripIds').checked,
     xExtra: $('xExtra').value.split(',').map(s => s.trim()).filter(Boolean),
+    sqlLayout: $('sqlLayout').checked, sqlAndOr: $('sqlAndOr').checked, sqlCase: $('sqlCase').checked, sqlBrackets: $('sqlBrackets').checked, sqlComments: $('sqlComments').checked,
   };
 }
 
@@ -1228,19 +1369,32 @@ function splitLines(t) {
   return lines;
 }
 
+function resolvePreset(rawL, rawR) {
+  const chosen = $('preset').value;
+  if (chosen !== 'auto') { $('detected').textContent = ''; return chosen; }
+  const a = sniff(rawL, $('nameL').value), b = sniff(rawR, $('nameR').value);
+  const pick = (a === 'ssis' || b === 'ssis') ? 'ssis' : a === b ? a : (a === 'text' ? b : b === 'text' ? a : 'text');
+  const label = { ssis: 'SSIS package', xml: 'XML', sql: 'SQL', text: 'plain text' }[pick];
+  $('detected').textContent = `detected: ${label}` + (a !== b ? ` (left ${a}, right ${b})` : '');
+  return pick;
+}
 function compare() {
   const opts = getOpts();
   const rawL = $('txtL').value, rawR = $('txtR').value;
+  opts.preset = resolvePreset(rawL, rawR);
   state.warn = [];
   state.names = [$('nameL').value || 'left', $('nameR').value || 'right'];
   const t0 = performance.now();
   // Semantic SSIS compare (object by object) when the preset is SSIS.
   state.ssis = null;
   if (opts.preset === 'ssis') {
+    if ($('view').value !== 'ssis' && !state.viewChosen) $('view').value = 'ssis';
+    opts.sqlNorm = v => sqlNormalize(v, opts);
     const A = SSIS.parse(rawL), B = SSIS.parse(rawR);
     if (A && B) { state.ssis = SSIS.diff(A, B, opts); state.ssisObjs = { A, B }; }
     else { state.warn.push((A ? 'Right' : 'Left') + ' side is not well-formed XML; object view unavailable.'); if ($('view').value === 'ssis') $('view').value = 'side'; }
   } else if ($('view').value === 'ssis') $('view').value = 'side';
+  state.opts = opts;
   // Text compare (always computed so the user can flip to raw view).
   const a = applyPreset(rawL, opts), b = applyPreset(rawR, opts);
   if (a.warn) state.warn.push('Left: ' + a.warn);
@@ -1262,10 +1416,8 @@ function readFileInto(side, file) {
   rd.readAsText(file);
 }
 function autoPreset(name) {
-  const ext = (name.split('.').pop() || '').toLowerCase();
-  if (ext === 'dtsx' || ext === 'conmgr' || ext === 'params') { $('preset').value = 'ssis'; $('view').value = 'ssis'; }
-  else if (ext === 'sql') $('preset').value = 'sql';
-  else if (['xml', 'dtproj', 'conmgr', 'params', 'rdl', 'dtsconfig', 'csproj', 'config'].includes(ext)) { if ($('preset').value === 'text') $('preset').value = 'xml'; }
+  // Loading a file resets any manual view choice so detection can pick the right view.
+  state.viewChosen = false;
 }
 let pendingAuto = false;
 function maybeAutoCompare() {
@@ -1391,6 +1543,7 @@ function setMode(m) {
   $('toolbar').style.display = files ? '' : 'none';
   $('result').style.display = files ? '' : 'none';
 }
+$('view').addEventListener('change', () => { state.viewChosen = true; });
 $('tabFiles').addEventListener('click', () => setMode('files'));
 $('tabFolders').addEventListener('click', () => setMode('folders'));
 $('btnCompare').addEventListener('click', compare);
@@ -1413,9 +1566,9 @@ $('btnCopy').addEventListener('click', async () => {
 $('btnSave').addEventListener('click', () => download((state.names[1] || 'compare').replace(/[^\w.-]+/g, '_') + '.diff', unifiedText()));
 $('btnReport').addEventListener('click', () => download((state.names[1] || 'compare').replace(/[^\w.-]+/g, '_') + '.diff.html', reportHtml(), 'text/html'));
 ['view', 'optWrap', 'optCollapse', 'optCtx', 'optShowSame'].forEach(id => $(id).addEventListener('change', () => { if (state.rows.length || state.ssis) render(); }));
-['preset', 'optTrim', 'optWs', 'optCase', 'optBlank', 'optInline', 'xAttrLines', 'xSortAttrs', 'xStripLayout', 'xStripStamps', 'xStripIds'].forEach(id => $(id).addEventListener('change', () => { saveSettings(); if (state.rows.length) compare(); }));
+['preset', 'optTrim', 'optWs', 'optCase', 'optBlank', 'optInline', 'xAttrLines', 'xSortAttrs', 'xStripLayout', 'xStripStamps', 'xStripIds', 'sqlLayout', 'sqlAndOr', 'sqlCase', 'sqlBrackets', 'sqlComments'].forEach(id => $(id).addEventListener('change', () => { saveSettings(); if (state.rows.length) compare(); }));
 $('xExtra').addEventListener('change', () => { saveSettings(); if (state.rows.length) compare(); });
-$('preset').addEventListener('change', () => { if ($('preset').value === 'ssis') $('view').value = 'ssis'; else if ($('view').value === 'ssis') $('view').value = 'side'; });
+$('preset').addEventListener('change', () => { state.viewChosen = false; if ($('preset').value === 'ssis') $('view').value = 'ssis'; else if ($('preset').value !== 'auto' && $('view').value === 'ssis') $('view').value = 'side'; });
 $('btnTheme').addEventListener('click', () => {
   const cur = document.documentElement.getAttribute('data-theme');
   const dark = cur ? cur === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -1429,7 +1582,8 @@ $('btnHelp').addEventListener('click', () => {
     'Files tab: paste or drop two files (or drop two files at once anywhere on the page). Compare runs automatically when both sides come from files; press Compare or Ctrl+Enter after pasting.',
     'Folders tab: pick/drop two folders to see which files differ, then click a row to open it side by side.',
     '',
-    'Presets: SQL trims trailing whitespace. XML pretty-prints so each attribute is its own line.',
+    'Mode: Auto-detect looks at the content (and file name) and picks SSIS, XML, SQL or plain text. Pick a mode explicitly to override.',
+    'SQL: keywords are uppercased, [brackets] dropped from plain names, comments ignored, and the statement laid out one clause and one column per line, so re-indented or re-cased code does not light up. Turn any of these off under SQL options. The same rules apply to SQL inside SSIS tasks and components.',
     'SSIS package: both .dtsx files are parsed into their objects (tasks, containers, data flow components, connection managers, variables, constraints, script code) and compared object by object. IDs, GUIDs, timestamps, build numbers and designer layout are ignored, so you see which task changed and what inside it, e.g. the old and new SQL of an Execute SQL Task. The index at the top reads package > container > step > what changed; each code change has Differences / Old code / New code tabs. Switch View to Side by side / Unified for the normalised XML text.',
     '',
     'Shortcuts: Ctrl+Enter compare · Alt+↓ / Alt+↑ next/prev change · Esc jump back to inputs',
@@ -1445,7 +1599,7 @@ document.addEventListener('keydown', e => {
 });
 
 /* settings persistence (best effort; Citrix profiles may discard it) */
-const SETTING_IDS = ['preset', 'optTrim', 'optWs', 'optCase', 'optBlank', 'optInline', 'view', 'optWrap', 'optCollapse', 'optCtx', 'xAttrLines', 'xSortAttrs', 'xStripLayout', 'xStripStamps', 'xStripIds', 'xExtra'];
+const SETTING_IDS = ['preset', 'optTrim', 'optWs', 'optCase', 'optBlank', 'optInline', 'view', 'optWrap', 'optCollapse', 'optCtx', 'xAttrLines', 'xSortAttrs', 'xStripLayout', 'xStripStamps', 'xStripIds', 'xExtra', 'sqlLayout', 'sqlAndOr', 'sqlCase', 'sqlBrackets', 'sqlComments'];
 function saveSettings() {
   try {
     const s = {};
@@ -1463,12 +1617,12 @@ function loadSettings() {
   } catch {}
 }
 loadSettings();
-if ($('view').value === 'ssis' && $('preset').value !== 'ssis') $('view').value = 'side';
+if ($('view').value === 'ssis' && $('preset').value !== 'ssis' && $('preset').value !== 'auto') $('view').value = 'side';
 if ($('preset').value === 'ssis') $('view').value = 'ssis';
 ['view', 'optWrap', 'optCollapse', 'optCtx'].forEach(id => $(id).addEventListener('change', saveSettings));
 
 // Expose for tests / console use.
-window.ValiCode = window.CodeCompare = { myers, buildRows, xmlNormalize, applyPreset, unifiedText, compare, state, SSIS };
+window.ValiCode = window.CodeCompare = { myers, buildRows, xmlNormalize, sqlNormalize, sniff, applyPreset, unifiedText, compare, state, SSIS };
 </script>
 </body>
 </html>
