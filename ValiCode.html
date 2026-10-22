@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Code Compare</title>
+<title>Vali Code</title>
 <meta name="description" content="Single-file, offline, side-by-side diff for code, SQL and SSIS packages. No install, no network, no dependencies.">
 <style>
   :root {
@@ -206,7 +206,7 @@
 </head>
 <body>
 <header>
-  <h1>Code Compare</h1>
+  <h1>Vali Code</h1>
   <span class="tabs">
     <button id="tabFiles" class="on" title="Compare two files or pasted text">Files</button>
     <button id="tabFolders" title="Compare two folders, then drill into any file">Folders</button>
@@ -1424,7 +1424,7 @@ $('btnTheme').addEventListener('click', () => {
 });
 $('btnHelp').addEventListener('click', () => {
   alert([
-    'Code Compare — single file, offline.',
+    'Vali Code — single file, offline.',
     '',
     'Files tab: paste or drop two files (or drop two files at once anywhere on the page). Compare runs automatically when both sides come from files; press Compare or Ctrl+Enter after pasting.',
     'Folders tab: pick/drop two folders to see which files differ, then click a row to open it side by side.',
@@ -1451,12 +1451,12 @@ function saveSettings() {
     const s = {};
     for (const id of SETTING_IDS) { const el = $(id); s[id] = el.type === 'checkbox' ? el.checked : el.value; }
     s.theme = document.documentElement.getAttribute('data-theme') || '';
-    localStorage.setItem('codecompare.settings', JSON.stringify(s));
+    localStorage.setItem('valicode.settings', JSON.stringify(s));
   } catch {}
 }
 function loadSettings() {
   try {
-    const s = JSON.parse(localStorage.getItem('codecompare.settings') || 'null');
+    const s = JSON.parse(localStorage.getItem('valicode.settings') || 'null');
     if (!s) return;
     for (const id of SETTING_IDS) { const el = $(id); if (!(id in s)) continue; if (el.type === 'checkbox') el.checked = !!s[id]; else el.value = s[id]; }
     if (s.theme) document.documentElement.setAttribute('data-theme', s.theme);
@@ -1468,7 +1468,7 @@ if ($('preset').value === 'ssis') $('view').value = 'ssis';
 ['view', 'optWrap', 'optCollapse', 'optCtx'].forEach(id => $(id).addEventListener('change', saveSettings));
 
 // Expose for tests / console use.
-window.CodeCompare = { myers, buildRows, xmlNormalize, applyPreset, unifiedText, compare, state, SSIS };
+window.ValiCode = window.CodeCompare = { myers, buildRows, xmlNormalize, applyPreset, unifiedText, compare, state, SSIS };
 </script>
 </body>
 </html>

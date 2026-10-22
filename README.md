@@ -1,6 +1,6 @@
-# Code Compare
+# Vali Code
 
-One HTML file. No install, no network, no dependencies. Open `compare.html` in any
+One HTML file. No install, no network, no dependencies. Open `ValiCode.html` in any
 browser and compare two pieces of code, two files, or two folders. Built for a
 locked-down Citrix desktop where you can bring a file in but cannot install anything.
 
@@ -34,11 +34,11 @@ locked-down Citrix desktop where you can bring a file in but cannot install anyt
 
 Pick whichever works there:
 
-1. **Copy the file in.** Drop `compare.html` anywhere (desktop, mapped drive) and
+1. **Copy the file in.** Drop `ValiCode.html` anywhere (desktop, mapped drive) and
    double-click it. It runs from `file://`, nothing executes natively, so AppLocker
    and exe whitelisting do not apply.
 2. **Type it in.** If only text can cross the boundary, paste the source into Notepad
-   and save as `compare.html`. It is plain UTF-8 text.
+   and save as `ValiCode.html`. It is plain UTF-8 text.
 3. **Browser blocks local files?** Run `python serve.py` (or paste it into a Jupyter
    cell) and click the printed link. This is the same loopback-server pattern the
    existing notebook uses.
@@ -47,7 +47,7 @@ Pick whichever works there:
 
 | File | Purpose |
 |---|---|
-| `compare.html` | The tool. This is the only file you need. |
+| `ValiCode.html` | The tool. This is the only file you need. |
 | `serve.py` | Optional loopback launcher for environments that block `file://`. |
 | `samples/` | Two versions of an SSIS package and a SQL view to try it on. |
 | `test/smoke.mjs` | Headless-browser test: diff engine vs brute-force LCS, SSIS object diff on the samples, view rendering. |

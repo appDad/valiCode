@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Fallback launcher for compare.html when the browser will not open local files
+Fallback launcher for ValiCode.html when the browser will not open local files
 (some locked-down desktops block file:// URLs).
 
-Serves compare.html from a loopback HTTP server, exactly the pattern Vali's
+Serves ValiCode.html from a loopback HTTP server, exactly the pattern Vali's
 notebook already uses, and prints/opens the URL. Nothing leaves the machine.
 
 Terminal:   python serve.py
@@ -18,7 +18,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
 
 HERE = os.path.dirname(os.path.abspath(__file__)) if "__file__" in globals() else os.getcwd()
-PAGE = os.path.join(HERE, "compare.html")
+PAGE = os.path.join(HERE, "ValiCode.html")
 TOKEN = secrets.token_urlsafe(16)
 
 
@@ -50,9 +50,9 @@ def main():
     url = f"http://127.0.0.1:{server.server_address[1]}/?t={TOKEN}"
     try:
         from IPython.display import HTML, display  # running inside Jupyter
-        display(HTML(f'<a href="{html.escape(url)}" target="_blank"><b>Open Code Compare</b></a>'))
+        display(HTML(f'<a href="{html.escape(url)}" target="_blank"><b>Open Vali Code</b></a>'))
     except ImportError:
-        print("Code Compare:", url)
+        print("Vali Code:", url)
         webbrowser.open(url)
         try:
             server.serve_forever()  # keep the process alive in a terminal

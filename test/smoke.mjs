@@ -1,4 +1,4 @@
-// Smoke test: loads compare.html in headless Chromium from file://, checks the diff engine
+// Smoke test: loads ValiCode.html in headless Chromium from file://, checks the diff engine
 // against a brute-force LCS, runs the SSIS object compare on the samples, and screenshots.
 // Run: node test/smoke.mjs
 import { createRequire } from 'node:module';
@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const page_url = 'file://' + path.join(root, 'compare.html');
+const page_url = 'file://' + path.join(root, 'ValiCode.html');
 let failures = 0;
 const check = (cond, msg) => { if (!cond) { failures++; console.log('FAIL', msg); } else console.log('ok  ', msg); };
 
