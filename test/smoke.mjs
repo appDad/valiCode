@@ -69,6 +69,13 @@ const stats = await page.textContent('#stats');
 check(/\+10/.test(stats) && /−2/.test(stats), `SQL view diff stats (canonical layout): ${stats.trim()}`);
 check((await page.$$('#result tr.add')).length === 8 && (await page.$$('#result tr.mod')).length === 2, 'SQL view: 8 added rows (incl. 4-line CASE), 2 modified rows');
 check(!(await page.isVisible('#ssisFilter')), 'SSIS filter bar hidden in text views');
+check((await page.$$('#result tr.eq:not(.hide)')).length === 0, 'changes only: no equal lines visible');
+check((await page.$$('#result tr.fold.gap')).length >= 1, 'changes only: gap marker rows present');
+await page.click('#result tr.fold.gap');
+check((await page.$$('#result tr.eq:not(.hide)')).length > 0, 'clicking a gap reveals the skipped lines');
+await page.uncheck('#optOnly');
+check((await page.$$('#result tr.eq:not(.hide)')).length > 0 && (await page.$$('#result tr.fold.gap')).length === 0, 'unticking restores context lines');
+await page.check('#optOnly');
 await page.screenshot({ path: path.join(root, 'test/out-sql.png'), fullPage: true });
 
 // 2b. SQL-aware: same logic, different formatting -> identical. Real change -> reported.

@@ -1,4 +1,8 @@
-## Vali Code 1.0.1
+## Vali Code 1.0.2
+
+"Changes only" view, on by default: identical lines are hidden everywhere (text views, SSIS code cards, exports). A thin ⋯ row marks skipped lines; click it to peek.
+
+## 1.0.1
 
 Clearer file loading: a Browse… button on each side, the name field is now a label that fills in from the file, and the empty boxes say what to do.
 

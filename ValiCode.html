@@ -112,6 +112,7 @@
   table.diff tr.mod td.r mark, table.diff tr.add td.r mark { background: var(--add-strong); }
   table.diff tr.fold td { background: var(--bg3); color: var(--fg2); text-align: center; cursor: pointer; padding: 2px; font-family: var(--sans); font-size: 12px; white-space: normal; }
   table.diff tr.fold td:hover { color: var(--accent); }
+  table.diff tr.fold.gap td { padding: 0; font-size: 10px; line-height: 10px; height: 10px; letter-spacing: 3px; color: var(--gutter-fg); }
   table.diff tr.cur td.n { outline: 2px solid var(--focus); outline-offset: -2px; }
   table.diff tr.eq.hide { display: none; }
   table.diff td.sign { width: 1.4em; text-align: center; color: var(--gutter-fg); background: var(--gutter); user-select: none; }
@@ -304,6 +305,7 @@ or paste the code here."></textarea>
     <span class="grp"><b>View</b>
       <select id="view"><option value="ssis">SSIS objects</option><option value="side">Side by side</option><option value="unified">Unified</option></select>
       <label class="chk"><input type="checkbox" id="optWrap"> wrap</label>
+      <label class="chk" title="Show only lines that differ. Click a ⋯ gap to peek at what was skipped."><input type="checkbox" id="optOnly" checked> <b>changes only</b></label>
       <label class="chk"><input type="checkbox" id="optCollapse" checked> collapse unchanged</label>
       <label class="chk">context <input type="number" id="optCtx" min="0" max="50" value="3"></label>
       <label class="chk"><input type="checkbox" id="optInline" checked> highlight within line</label>
@@ -1073,6 +1075,8 @@ let state = { rows: [], ssis: null, ssisObjs: null, nblocks: 0, cur: -1, names: 
 
 /* Build an HTML diff table from rows. blkStart: Map rowIndex -> block number (for navigation). */
 function tableHtml(rows, view, collapse, ctx, wrap, blkStart) {
+  const only = $('optOnly').checked;
+  if (only) { collapse = true; ctx = 0; }
   const vis = new Uint8Array(rows.length);
   if (!collapse) vis.fill(1);
   else for (let i = 0; i < rows.length; i++) if (rows[i].t !== 'eq') { for (let j = Math.max(0, i - ctx); j <= Math.min(rows.length - 1, i + ctx); j++) vis[j] = 1; }
@@ -1084,7 +1088,8 @@ function tableHtml(rows, view, collapse, ctx, wrap, blkStart) {
     if (!vis[i]) {
       let j = i; while (j < rows.length && !vis[j]) j++;
       const n = j - i;
-      html.push(`<tr class="fold" data-from="${i}" data-to="${j}"><td colspan="4">⋯ ${n} unchanged line${n === 1 ? '' : 's'} (click to expand)</td></tr>`);
+      if (only) html.push(`<tr class="fold gap" data-from="${i}" data-to="${j}" title="${n} unchanged line${n === 1 ? '' : 's'} (lines ${rows[i].ln || rows[i].rn}–${rows[j - 1].ln || rows[j - 1].rn}); click to show"><td colspan="4">⋯</td></tr>`);
+      else html.push(`<tr class="fold" data-from="${i}" data-to="${j}"><td colspan="4">⋯ ${n} unchanged line${n === 1 ? '' : 's'} (click to expand)</td></tr>`);
       for (let k = i; k < j; k++) html.push(rowHtml(rows[k], k, view, true, blkStart));
       i = j; continue;
     }
@@ -1137,6 +1142,7 @@ function finishStats(extra) {
 
 function render() {
   const view = $('view').value;
+  $('optCtx').disabled = $('optOnly').checked; $('optCollapse').disabled = $('optOnly').checked;
   $('ssisFilter').hidden = !(view === 'ssis' && state.ssis);
   $('btnExpandAll').hidden = (view === 'ssis' && state.ssis);
   $('toolbar').hidden = false;
@@ -1158,7 +1164,7 @@ function miniDiff(oldV, newV) {
   const opts = getOpts();
   const rows = buildRows(splitLines(oldV ?? ''), splitLines(newV ?? ''), opts);
   // Show the whole code for anything reasonably short; only collapse very long bodies.
-  const collapse = rows.length > 400 && $('optCollapse').checked;
+  const collapse = $('optOnly').checked || (rows.length > 400 && $('optCollapse').checked);
   let add = 0, del = 0;
   for (const r of rows) { if (r.t === 'add') add++; else if (r.t === 'del') del++; else if (r.t === 'mod') { add++; del++; } }
   return { html: tableHtml(rows, 'side', collapse, Math.max(3, parseInt($('optCtx').value, 10) || 3), true, null), add, del };
@@ -1339,7 +1345,7 @@ function goTo(b, smooth = true) {
    =================================================================== */
 function unifiedFromRows(rows, nameA, nameB) {
   const out = [`--- ${nameA}`, `+++ ${nameB}`];
-  const ctx = 3;
+  const ctx = $('optOnly').checked ? 0 : 3;
   let i = 0;
   while (i < rows.length) {
     if (rows[i].t === 'eq') { i++; continue; }
@@ -1632,7 +1638,7 @@ $('btnCopy').addEventListener('click', async () => {
 });
 $('btnSave').addEventListener('click', () => download((state.names[1] || 'compare').replace(/[^\w.-]+/g, '_') + '.diff', unifiedText()));
 $('btnReport').addEventListener('click', () => download((state.names[1] || 'compare').replace(/[^\w.-]+/g, '_') + '.diff.html', reportHtml(), 'text/html'));
-['view', 'optWrap', 'optCollapse', 'optCtx', 'optShowSame'].forEach(id => $(id).addEventListener('change', () => { if (state.rows.length || state.ssis) render(); }));
+['view', 'optWrap', 'optCollapse', 'optCtx', 'optShowSame', 'optOnly'].forEach(id => $(id).addEventListener('change', () => { if (state.rows.length || state.ssis) render(); }));
 ['preset', 'optTrim', 'optWs', 'optCase', 'optBlank', 'optInline', 'xAttrLines', 'xSortAttrs', 'xStripLayout', 'xStripStamps', 'xStripIds', 'sqlLayout', 'sqlAndOr', 'sqlCase', 'sqlBrackets', 'sqlComments'].forEach(id => $(id).addEventListener('change', () => { saveSettings(); if (state.rows.length) compare(); }));
 $('xExtra').addEventListener('change', () => { saveSettings(); if (state.rows.length) compare(); });
 $('preset').addEventListener('change', () => { state.viewChosen = false; if ($('preset').value === 'ssis') $('view').value = 'ssis'; else if ($('preset').value !== 'auto' && $('view').value === 'ssis') $('view').value = 'side'; });
@@ -1653,6 +1659,8 @@ $('btnHelp').addEventListener('click', () => {
     'SQL: keywords are uppercased, [brackets] dropped from plain names, comments ignored, and the statement laid out one clause and one column per line, so re-indented or re-cased code does not light up. Turn any of these off under SQL options. The same rules apply to SQL inside SSIS tasks and components.',
     'SSIS package: both .dtsx files are parsed into their objects (tasks, containers, data flow components, connection managers, variables, constraints, script code) and compared object by object. IDs, GUIDs, timestamps, build numbers and designer layout are ignored, so you see which task changed and what inside it, e.g. the old and new SQL of an Execute SQL Task. Use the filter bar to show only tasks, data flow components, variables, connection managers etc., only added/removed/modified, or search by name. The index at the top reads package > container > step > what changed; each code change has Differences / Old code / New code tabs. Switch View to Side by side / Unified for the normalised XML text.',
     '',
+    'Changes only (on by default) hides every identical line. A thin ⋯ row marks where lines were skipped; click it to see them. Untick it to get context lines back (set how many with "context").',
+    '',
     'Shortcuts: Ctrl+Enter compare · Alt+↓ / Alt+↑ next/prev change · Esc jump back to inputs',
     '',
     'Copy diff / Save .diff give a standard unified diff. Save report writes this view as a standalone HTML file.',
@@ -1666,7 +1674,7 @@ document.addEventListener('keydown', e => {
 });
 
 /* settings persistence (best effort; Citrix profiles may discard it) */
-const SETTING_IDS = ['preset', 'optTrim', 'optWs', 'optCase', 'optBlank', 'optInline', 'view', 'optWrap', 'optCollapse', 'optCtx', 'xAttrLines', 'xSortAttrs', 'xStripLayout', 'xStripStamps', 'xStripIds', 'xExtra', 'sqlLayout', 'sqlAndOr', 'sqlCase', 'sqlBrackets', 'sqlComments'];
+const SETTING_IDS = ['preset', 'optTrim', 'optWs', 'optCase', 'optBlank', 'optInline', 'view', 'optWrap', 'optCollapse', 'optCtx', 'optOnly', 'xAttrLines', 'xSortAttrs', 'xStripLayout', 'xStripStamps', 'xStripIds', 'xExtra', 'sqlLayout', 'sqlAndOr', 'sqlCase', 'sqlBrackets', 'sqlComments'];
 function saveSettings() {
   try {
     const s = {};
@@ -1686,7 +1694,7 @@ function loadSettings() {
 loadSettings();
 if ($('view').value === 'ssis' && $('preset').value !== 'ssis' && $('preset').value !== 'auto') $('view').value = 'side';
 if ($('preset').value === 'ssis') $('view').value = 'ssis';
-['view', 'optWrap', 'optCollapse', 'optCtx'].forEach(id => $(id).addEventListener('change', saveSettings));
+['view', 'optWrap', 'optCollapse', 'optCtx', 'optOnly'].forEach(id => $(id).addEventListener('change', saveSettings));
 
 // Expose for tests / console use.
 window.ValiCode = window.CodeCompare = { myers, buildRows, xmlNormalize, sqlNormalize, sniff, applyPreset, unifiedText, compare, state, SSIS };
