@@ -1,0 +1,30 @@
+# Publishes a GitHub release whenever VERSION changes on the default branch
+# (or on manual dispatch). The release carries ValiCode.html as its asset.
+name: release
+on:
+  push:
+    paths: [VERSION]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          v="v$(tr -d '[:space:]' < VERSION)"
+          if gh release view "$v" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "release $v already exists; uploading asset only"
+            gh release upload "$v" ValiCode.html --clobber --repo "$GITHUB_REPOSITORY"
+            exit 0
+          fi
+          gh release create "$v" ValiCode.html \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Vali Code ${v#v}" \
+            --notes-file RELEASE_NOTES.md
