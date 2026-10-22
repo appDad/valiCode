@@ -15,8 +15,12 @@ locked-down Citrix desktop where you can bring a file in but cannot install anyt
   property by property. GUIDs, DTSIDs, version/build numbers, creation dates and
   designer layout are ignored, so saving a package in Visual Studio without changing
   it reports **no functional changes**. SQL, expressions and C# are shown as text diffs
-  inside the object that owns them, so the answer to "which step changed and how" is
-  one card.
+  inside the object that owns them. The result opens with a plain-language index,
+  one line per change: *package › container › step (kind) — what changed*. Cards are
+  grouped under their container, and every code change has **Differences**, **Old
+  code** and **New code** tabs so you can read either version whole or just the delta.
+  The text export has the same shape: summary, then per step OLD CODE / NEW CODE /
+  DIFFERENCES.
 - **Folder compare**: drop or pick two folders, see which files are added, removed or
   modified, click one to open it side by side. Useful for two project checkouts.
 - **Ignore options**: whitespace, case, blank lines. **Presets** for SQL, generic XML

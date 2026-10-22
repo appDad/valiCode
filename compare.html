@@ -168,6 +168,31 @@
   .card details table.props { margin-top: 4px; }
   .card.same .ch { border-bottom: 0; }
 
+  .outline { margin: 0; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg2); font-size: 13px; }
+  .outline li { margin: 3px 0 3px 18px; cursor: pointer; }
+  .outline li:hover { color: var(--accent); }
+  .outline .crumb, .grp .crumb { color: var(--fg2); }
+  .outline .crumb::after, .grp .crumb::after { content: " › "; }
+  .outline .what { color: var(--fg2); }
+  .outline b { font-weight: 600; }
+  .outline .st { font-size: 11px; font-weight: 700; text-transform: uppercase; margin-right: 4px; }
+  .outline .st.modified, .outline .st.renamed { color: #9a6700; }
+  .outline .st.added { color: var(--add-fg); }
+  .outline .st.removed { color: var(--del-fg); }
+  h3.grp { font-size: 13px; font-weight: 600; margin: 8px 0 -4px; color: var(--fg); }
+  h3.grp .kind { color: var(--fg2); font-weight: 400; }
+  .card .desc { color: var(--fg2); font-size: 12px; flex-basis: 100%; }
+  .codeprop .pn { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .codeprop .pn .tabs { margin-left: auto; display: inline-flex; }
+  .codeprop .pn .tabs button { font-size: 11px; padding: 2px 8px; border-radius: 0; margin-left: -1px; }
+  .codeprop .pn .tabs button:first-child { border-radius: 5px 0 0 5px; }
+  .codeprop .pn .tabs button:last-child { border-radius: 0 5px 5px 0; }
+  .codeprop .pn .tabs button.on { background: var(--accent); color: var(--accent-fg); border-color: transparent; }
+  .codeprop .pn .delta { font-family: var(--mono); font-size: 11px; }
+  .codeprop .pn .delta .a { color: var(--add-fg); } .codeprop .pn .delta .d { color: var(--del-fg); }
+  .codeprop pre { margin: 0; padding: 6px 10px; font: 12px/1.45 var(--mono); white-space: pre-wrap; word-break: break-word; max-height: 60vh; overflow: auto; }
+  .codeprop pre.old { background: var(--del-bg); } .codeprop pre.new { background: var(--add-bg); }
+
   footer { font-size: 11px; color: var(--fg2); padding: 6px 16px; border-top: 1px solid var(--border); display: flex; flex-wrap: wrap; gap: 12px; }
   @media (max-width: 800px) {
     .inputs { grid-template-columns: 1fr; }
@@ -872,7 +897,7 @@ function cell(text, hl) {
   return hl.map(([m, t]) => (m ? '<mark>' + escHtml(t) + '</mark>' : escHtml(t))).join('');
 }
 
-let state = { rows: [], ssis: null, nblocks: 0, cur: -1, names: ['left', 'right'], warn: [], ms: 0, lines: [0, 0] };
+let state = { rows: [], ssis: null, ssisObjs: null, nblocks: 0, cur: -1, names: ['left', 'right'], warn: [], ms: 0, lines: [0, 0] };
 
 /* Build an HTML diff table from rows. blkStart: Map rowIndex -> block number (for navigation). */
 function tableHtml(rows, view, collapse, ctx, wrap, blkStart) {
@@ -960,13 +985,64 @@ const isBig = v => v !== undefined && (v.indexOf('\n') !== -1 || v.length > 90);
 function miniDiff(oldV, newV) {
   const opts = getOpts();
   const rows = buildRows(splitLines(oldV ?? ''), splitLines(newV ?? ''), opts);
-  return tableHtml(rows, 'side', $('optCollapse').checked, Math.max(1, parseInt($('optCtx').value, 10) || 3), true, null);
+  // Show the whole code for anything reasonably short; only collapse very long bodies.
+  const collapse = rows.length > 400 && $('optCollapse').checked;
+  let add = 0, del = 0;
+  for (const r of rows) { if (r.t === 'add') add++; else if (r.t === 'del') del++; else if (r.t === 'mod') { add++; del++; } }
+  return { html: tableHtml(rows, 'side', collapse, Math.max(3, parseInt($('optCtx').value, 10) || 3), true, null), add, del };
 }
-function propRows(changes, st) {
+
+/* Human labels for property names so the summary reads like a sentence. */
+function propLabel(name) {
+  if (/^Script: /.test(name)) return 'script code (' + name.slice(8) + ')';
+  if (name === 'SqlStatementSource' || name === 'SqlCommand' || /\.SqlCommand$/.test(name)) return 'SQL';
+  if (name === 'Value') return 'value';
+  if (name === '(path)') return 'location';
+  if (/FriendlyExpression$/.test(name)) return 'expression for column ' + (name.match(/col\[([^\]]*)\]/) || [, '?'])[1];
+  if (/\.Expression$/.test(name) && /col\[/.test(name)) return null; // internal twin of FriendlyExpression
+  if (/^Expression(\[|$)/.test(name) || name === 'Expression') return name === 'Expression' ? 'expression' : 'expression on ' + name.slice(11, -1);
+  if (name === 'ConnectionString') return 'connection string';
+  const col = name.match(/^(Input|Output)\[([^\]]*)\]\.(col|ext)\[([^\]]*)\](.*)$/);
+  if (col) return (col[3] === 'col' ? 'column ' : 'external column ') + col[4] + (col[5] ? ' ' + col[5].slice(1) : '') + ' on ' + col[1].toLowerCase() + ' ' + col[2];
+  const con = name.match(/^Connection\[(.*)\]$/); if (con) return 'connection ' + con[1];
+  return name;
+}
+function shortVal(v) { v = (v ?? '').replace(/\s+/g, ' ').trim(); return v.length > 40 ? v.slice(0, 37) + '…' : v; }
+function describe(e) {
+  if (e.st === 'added') return `new ${e.obj.kind}`;
+  if (e.st === 'removed') return `${e.obj.kind} removed`;
+  const bits = [];
+  const seen = new Set();
+  for (const c of e.changes) {
+    const label = propLabel(c.name); if (label === null || seen.has(label)) continue; seen.add(label);
+    if (isBig(c.old) || isBig(c.new)) {
+      if (c.old === undefined) bits.push(`${label} added`); else if (c.new === undefined) bits.push(`${label} removed`); else bits.push(`${label} changed`);
+    } else if (c.old === undefined) bits.push(`${label} added (${shortVal(c.new)})`);
+    else if (c.new === undefined) bits.push(`${label} removed (was ${shortVal(c.old)})`);
+    else bits.push(`${label}: ${shortVal(c.old)} → ${shortVal(c.new)}`);
+  }
+  return bits.join('; ');
+}
+function parentKeyOf(key) { return key.replace(/[\\.][^\\.\[\]]+(\[[^\]]*\])?$/, ''); }
+function crumbs(key, objs) {
+  const out = [];
+  let k = parentKeyOf(key);
+  while (k && k !== key) {
+    const o = objs.B.get(k) || objs.A.get(k);
+    out.unshift(o ? { name: o.name, kind: o.kind } : { name: k.split(/[\\.]/).pop(), kind: '' });
+    const nk = parentKeyOf(k); if (nk === k) break; key = k; k = nk;
+  }
+  return out;
+}
+function propRows(changes) {
   const out = [];
   for (const c of changes) {
     if (isBig(c.old) || isBig(c.new)) {
-      out.push(`<tr><td class="big" colspan="3"><div class="pn">${escHtml(c.name)}</div>${miniDiff(c.old, c.new)}</td></tr>`);
+      const m = miniDiff(c.old, c.new);
+      const delta = `<span class="delta"><span class="a">+${m.add}</span> <span class="d">−${m.del}</span></span>`;
+      out.push(`<tr><td class="big" colspan="3"><div class="codeprop"><div class="pn">${escHtml(c.name)} ${delta}` +
+        `<span class="tabs"><button data-m="diff" class="on">Differences</button><button data-m="old">Old code</button><button data-m="new">New code</button></span></div>` +
+        `<div class="m diff">${m.html}</div><div class="m old" hidden><pre class="old">${escHtml(c.old ?? '(none)')}</pre></div><div class="m new" hidden><pre class="new">${escHtml(c.new ?? '(none)')}</pre></div></div></td></tr>`);
       continue;
     }
     let oh = c.old === undefined ? '' : escHtml(c.old), nh = c.new === undefined ? '' : escHtml(c.new);
@@ -978,21 +1054,51 @@ function propRows(changes, st) {
   }
   return out.join('');
 }
+$('result').addEventListener('click', e => {
+  const b = e.target.closest('.codeprop .tabs button'); if (!b) return;
+  const cp = b.closest('.codeprop');
+  cp.querySelectorAll('.tabs button').forEach(x => x.classList.toggle('on', x === b));
+  cp.querySelectorAll('.m').forEach(x => x.hidden = !x.classList.contains(b.dataset.m));
+});
+$('result').addEventListener('click', e => {
+  const li = e.target.closest('.outline li[data-go]'); if (li) goTo(+li.dataset.go);
+});
 function renderSsis() {
-  const entries = state.ssis;
+  const entries = state.ssis, objs = state.ssisObjs;
   const showSame = $('optShowSame').checked;
   const counts = { modified: 0, renamed: 0, added: 0, removed: 0, same: 0 };
   for (const e of entries) counts[e.st]++;
-  const html = ['<div class="cards">'];
   const changed = counts.modified + counts.renamed + counts.added + counts.removed;
-  html.push(`<div class="summary"><b>${changed ? changed + ' object' + (changed === 1 ? '' : 's') + ' changed' : 'No functional changes'}</b>` +
+  const pkg = objs.B.get('Package') || objs.A.get('Package');
+  const html = ['<div class="cards">'];
+  html.push(`<div class="summary"><b>${pkg ? escHtml(pkg.name) + ': ' : ''}${changed ? changed + ' object' + (changed === 1 ? '' : 's') + ' changed' : 'no functional changes'}</b>` +
     `<span>${counts.modified} modified</span><span>${counts.renamed} renamed/moved</span><span>${counts.added} added</span><span>${counts.removed} removed</span><span>${counts.same} unchanged</span></div>`);
+  // 1. Plain-language index of every change.
   let blk = 0;
+  const blkOf = new Map();
+  if (changed) {
+    html.push('<ol class="outline">');
+    for (const e of entries) {
+      if (e.st === 'same') continue;
+      blkOf.set(e, blk);
+      const cr = crumbs(e.key, objs).map(c => `<span class="crumb">${escHtml(c.name)}</span>`).join('');
+      html.push(`<li data-go="${blk++}"><span class="st ${e.st}">${e.st}</span>${cr}<b>${escHtml(e.obj.name)}</b> <span class="kind">(${escHtml(e.obj.kind)})</span> <span class="what">— ${escHtml(describe(e))}</span></li>`);
+    }
+    html.push('</ol>');
+  }
+  // 2. Cards grouped by container / data flow.
+  let lastGroup = null;
   for (const e of entries) {
     if (e.st === 'same' && !showSame) continue;
     const o = e.obj;
-    const parent = e.key.replace(/[\\.][^\\.\[\]]+(\[[^\]]*\])?$/, '');
-    const head = `<div class="ch"><span class="badge">${e.st === 'same' ? 'unchanged' : e.st}</span><b>${escHtml(o.name)}</b><span class="kind">${escHtml(o.kind)}</span><span class="path" title="${escHtml(e.key)}">${escHtml(parent === e.key ? '' : parent)}</span></div>`;
+    const cr = crumbs(e.key, objs);
+    const groupKey = cr.map(c => c.name).join(' › ');
+    if (groupKey !== lastGroup) {
+      lastGroup = groupKey;
+      html.push(`<h3 class="grp">${cr.map((c, i) => `<span class="${i < cr.length - 1 ? 'crumb' : ''}">${escHtml(c.name)}</span>`).join('')}${cr.length ? ` <span class="kind">${escHtml(cr[cr.length - 1].kind)}</span>` : ''}</h3>`);
+    }
+    const head = `<div class="ch"><span class="badge">${e.st === 'same' ? 'unchanged' : e.st}</span><b>${escHtml(o.name)}</b><span class="kind">${escHtml(o.kind)}</span><span class="path" title="${escHtml(e.key)}">${escHtml(e.key)}</span>` +
+      (e.st !== 'same' ? `<span class="desc">${escHtml(describe(e))}</span>` : '') + `</div>`;
     let body = '';
     if (e.st === 'modified' || e.st === 'renamed') {
       body = `<table class="props"><thead><tr><th>Property</th><th>Old</th><th>New</th></tr></thead><tbody>${propRows(e.changes)}</tbody></table>`;
@@ -1000,7 +1106,7 @@ function renderSsis() {
       const n = e.changes.length;
       body = `<details><summary>${n} propert${n === 1 ? 'y' : 'ies'}</summary><table class="props"><tbody>${e.changes.map(c => `<tr><td class="pn">${escHtml(c.name)}</td><td class="${e.st === 'added' ? 'new' : 'old'}" colspan="2">${escHtml((c.new ?? c.old) ?? '')}</td></tr>`).join('')}</tbody></table></details>`;
     }
-    const blkAttr = e.st === 'same' ? '' : ` data-blk="${blk++}"`;
+    const blkAttr = blkOf.has(e) ? ` data-blk="${blkOf.get(e)}"` : '';
     html.push(`<div class="card ${e.st}"${blkAttr}>${head}${body}</div>`);
   }
   html.push('</div>');
@@ -1008,7 +1114,6 @@ function renderSsis() {
   $('result').innerHTML = html.join('');
   finishStats(`<span class="${changed ? 'd' : ''}">${changed} object${changed === 1 ? '' : 's'} changed</span><span>${counts.same} unchanged</span>`);
   state.cur = -1; updatePos();
-  if (state.nblocks) goTo(0, false);
 }
 
 function updatePos() {
@@ -1065,21 +1170,27 @@ function unifiedText() {
 }
 function ssisText() {
   const opts = getOpts();
-  const out = [`SSIS package compare`, `old: ${state.names[0]}`, `new: ${state.names[1]}`, ''];
-  for (const e of state.ssis) {
-    if (e.st === 'same') continue;
-    out.push(`${e.st.toUpperCase()}: ${e.key}  [${e.obj.kind}]`);
+  const objs = state.ssisObjs;
+  const pkg = objs.B.get('Package') || objs.A.get('Package');
+  const rule = '='.repeat(72), thin = '-'.repeat(72);
+  const out = [`SSIS PACKAGE COMPARE${pkg ? ': ' + pkg.name : ''}`, `old: ${state.names[0]}`, `new: ${state.names[1]}`, ''];
+  const changed = state.ssis.filter(e => e.st !== 'same');
+  if (!changed.length) { out.push('No functional changes.'); return out.join('\n') + '\n'; }
+  out.push('SUMMARY');
+  changed.forEach((e, i) => out.push(`${i + 1}. [${e.st.toUpperCase()}] ${[...crumbs(e.key, objs).map(c => c.name), e.obj.name].join(' > ')} (${e.obj.kind}) - ${describe(e)}`));
+  out.push('');
+  changed.forEach((e, i) => {
+    out.push(rule, `${i + 1}. ${[...crumbs(e.key, objs).map(c => c.name), e.obj.name].join(' > ')}`, `   ${e.obj.kind} - ${e.st.toUpperCase()}`, `   ${e.key}`, rule);
     for (const c of e.changes) {
       if (isBig(c.old) || isBig(c.new)) {
-        out.push(`  ${c.name}:`);
-        out.push(unifiedFromRows(buildRows(splitLines(c.old ?? ''), splitLines(c.new ?? ''), opts), 'old', 'new').replace(/^/gm, '    ').trimEnd());
+        out.push('', `${c.name}`, thin, 'OLD CODE:', c.old ?? '(none)', thin, 'NEW CODE:', c.new ?? '(none)', thin, 'DIFFERENCES:');
+        out.push(unifiedFromRows(buildRows(splitLines(c.old ?? ''), splitLines(c.new ?? ''), opts), 'old', 'new').trimEnd());
       } else if (c.old === undefined) out.push(`  + ${c.name} = ${c.new}`);
       else if (c.new === undefined) out.push(`  - ${c.name} = ${c.old}`);
       else out.push(`  ~ ${c.name}: ${c.old}  ->  ${c.new}`);
     }
     out.push('');
-  }
-  if (out.length === 4) out.push('No functional changes.');
+  });
   return out.join('\n') + '\n';
 }
 
@@ -1127,7 +1238,7 @@ function compare() {
   state.ssis = null;
   if (opts.preset === 'ssis') {
     const A = SSIS.parse(rawL), B = SSIS.parse(rawR);
-    if (A && B) state.ssis = SSIS.diff(A, B, opts);
+    if (A && B) { state.ssis = SSIS.diff(A, B, opts); state.ssisObjs = { A, B }; }
     else { state.warn.push((A ? 'Right' : 'Left') + ' side is not well-formed XML; object view unavailable.'); if ($('view').value === 'ssis') $('view').value = 'side'; }
   } else if ($('view').value === 'ssis') $('view').value = 'side';
   // Text compare (always computed so the user can flip to raw view).
@@ -1319,7 +1430,7 @@ $('btnHelp').addEventListener('click', () => {
     'Folders tab: pick/drop two folders to see which files differ, then click a row to open it side by side.',
     '',
     'Presets: SQL trims trailing whitespace. XML pretty-prints so each attribute is its own line.',
-    'SSIS package: both .dtsx files are parsed into their objects (tasks, containers, data flow components, connection managers, variables, constraints, script code) and compared object by object. IDs, GUIDs, timestamps, build numbers and designer layout are ignored, so you see which task changed and what inside it, e.g. the old and new SQL of an Execute SQL Task. Switch View to Side by side / Unified for the normalised XML text.',
+    'SSIS package: both .dtsx files are parsed into their objects (tasks, containers, data flow components, connection managers, variables, constraints, script code) and compared object by object. IDs, GUIDs, timestamps, build numbers and designer layout are ignored, so you see which task changed and what inside it, e.g. the old and new SQL of an Execute SQL Task. The index at the top reads package > container > step > what changed; each code change has Differences / Old code / New code tabs. Switch View to Side by side / Unified for the normalised XML text.',
     '',
     'Shortcuts: Ctrl+Enter compare · Alt+↓ / Alt+↑ next/prev change · Esc jump back to inputs',
     '',

@@ -107,6 +107,17 @@ check(!byKey['Package\\Audit Row Counts'].changes.some(n => /Binary/i.test(n)), 
 console.log('objects:', ssis.length, 'cards:', (await page.$$('#result .card')).length);
 check((await page.$$('#result .card')).length === 10, '10 change cards rendered');
 check((await page.$$('#result .card table.diff')).length >= 3, 'mini text diffs rendered for SQL/script changes');
+check((await page.$$('#result .outline li')).length === 10, 'change index lists 10 entries');
+const idx = await page.textContent('#result .outline');
+check(/Load Staging\s*›?\s*Source Sales \(OLE DB Source\) — SQL changed/.test(idx), 'index sentence: Load Staging › Source Sales — SQL changed');
+check(/BatchSize \(Variable\) — value: 5000 → 10000/.test(idx), 'index sentence: variable value 5000 → 10000');
+check(/Notify \(Send Mail Task\) — new Send Mail Task/.test(idx), 'index sentence: new task');
+// Old code / New code tabs
+await page.click('#result .codeprop .tabs button[data-m="old"]');
+check(await page.isVisible('#result .codeprop pre.old'), 'Old code tab shows full old text');
+check(!(await page.isVisible('#result .codeprop .m.diff')), 'diff hidden while Old code tab active');
+await page.click('#result .outline li[data-go="5"]');
+check((await page.getAttribute('#result .card.cur', 'data-blk')) === '5', 'clicking index entry focuses its card');
 await page.screenshot({ path: path.join(root, 'test/out-ssis.png'), fullPage: true });
 
 // identical packages differing only by noise -> no changes
@@ -118,7 +129,7 @@ check(same, 'save-noise-only difference reports no functional changes');
 // text export works in ssis view
 await page.fill('#txtR', d2); await page.click('#btnCompare');
 const txt = await page.evaluate(() => window.CodeCompare.unifiedText());
-check(txt.includes('MODIFIED: Package\\Merge to Fact') && txt.includes('+WHEN NOT MATCHED BY SOURCE'), 'text report includes merge SQL change');
+check(/LoadSales > Merge to Fact\n   Execute SQL Task - MODIFIED/.test(txt) && txt.includes('OLD CODE:') && txt.includes('NEW CODE:') && txt.includes('+WHEN NOT MATCHED BY SOURCE'), 'text report: package > step, old code, new code, differences');
 
 // raw XML views still work
 await page.selectOption('#view', 'side');
