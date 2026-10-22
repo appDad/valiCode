@@ -1,0 +1,209 @@
+<?xml version="1.0"?>
+<DTS:Executable xmlns:DTS="www.microsoft.com/SqlServer/Dts"
+  DTS:refId="Package"
+  DTS:CreationDate="3/4/2026 9:12:41 AM"
+  DTS:CreationName="Microsoft.Package"
+  DTS:CreatorComputerName="DEV-VALI"
+  DTS:CreatorName="UCLA\vali"
+  DTS:DTSID="{1D5A0E2B-9C3F-4A1B-8E2D-0F1A2B3C4D5E}"
+  DTS:ExecutableType="Microsoft.Package"
+  DTS:LastModifiedProductVersion="16.0.5685.0"
+  DTS:LocaleID="1033"
+  DTS:ObjectName="LoadSales"
+  DTS:PackageType="5"
+  DTS:ProtectionLevel="0"
+  DTS:VersionBuild="23"
+  DTS:VersionGUID="{BBBBBBBB-5555-6666-7777-888888888888}">
+  <DTS:Property DTS:Name="PackageFormatVersion">8</DTS:Property>
+  <DTS:ConnectionManagers>
+    <DTS:ConnectionManager DTS:refId="Package.ConnectionManagers[Warehouse]" DTS:CreationName="OLEDB" DTS:DTSID="{B1000000-0000-0000-0000-000000000001}" DTS:ObjectName="Warehouse">
+      <DTS:ObjectData>
+        <DTS:ConnectionManager DTS:ConnectRetryCount="1" DTS:ConnectRetryInterval="5" DTS:ConnectionString="Data Source=SQLPROD01;Initial Catalog=Warehouse;Provider=SQLNCLI11.1;Integrated Security=SSPI;" />
+      </DTS:ObjectData>
+    </DTS:ConnectionManager>
+    <DTS:ConnectionManager DTS:refId="Package.ConnectionManagers[SMTP]" DTS:CreationName="SMTP" DTS:DTSID="{B1000000-0000-0000-0000-000000000002}" DTS:ObjectName="SMTP">
+      <DTS:ObjectData>
+        <SmtpConnectionManager ConnectionString="SmtpServer=smtp.example.org;UseWindowsAuthentication=True;EnableSsl=True;" />
+      </DTS:ObjectData>
+    </DTS:ConnectionManager>
+  </DTS:ConnectionManagers>
+  <DTS:Variables>
+    <DTS:Variable DTS:CreationName="" DTS:DTSID="{C1000000-0000-0000-0000-000000000001}" DTS:IncludeInDebugDump="2345" DTS:Namespace="User" DTS:ObjectName="BatchSize">
+      <DTS:VariableValue DTS:DataType="3">10000</DTS:VariableValue>
+    </DTS:Variable>
+    <DTS:Variable DTS:CreationName="" DTS:DTSID="{C1000000-0000-0000-0000-000000000002}" DTS:IncludeInDebugDump="2345" DTS:Namespace="User" DTS:ObjectName="RunDate" DTS:EvaluateAsExpression="True" DTS:Expression="(DT_WSTR, 10)(DT_DBDATE)GETDATE()">
+      <DTS:VariableValue DTS:DataType="8">2026-03-04</DTS:VariableValue>
+    </DTS:Variable>
+  </DTS:Variables>
+  <DTS:Executables>
+    <DTS:Executable DTS:refId="Package\Truncate Staging" DTS:CreationName="Microsoft.ExecuteSQLTask" DTS:Description="Execute SQL Task" DTS:DTSID="{D1000000-0000-0000-0000-000000000001}" DTS:ExecutableType="Microsoft.ExecuteSQLTask" DTS:LocaleID="-1" DTS:ObjectName="Truncate Staging" DTS:TaskContact="Execute SQL Task; Microsoft Corporation; SQL Server 2019; © 2019 Microsoft Corporation; All Rights Reserved;http://www.microsoft.com/sql/support/default.asp;1" DTS:ThreadHint="0">
+      <DTS:Variables />
+      <DTS:ObjectData>
+        <SQLTask:SqlTaskData xmlns:SQLTask="www.microsoft.com/sqlserver/dts/tasks/sqltask" SQLTask:Connection="{B1000000-0000-0000-0000-000000000001}" SQLTask:SqlStatementSource="TRUNCATE TABLE stg.Sales;" SQLTask:ResultType="ResultSetType_None" />
+      </DTS:ObjectData>
+    </DTS:Executable>
+    <DTS:Executable DTS:refId="Package\Load Staging" DTS:CreationName="Microsoft.Pipeline" DTS:Description="Data Flow Task" DTS:DTSID="{D1000000-0000-0000-0000-000000000002}" DTS:ExecutableType="Microsoft.Pipeline" DTS:LocaleID="-1" DTS:ObjectName="Load Staging" DTS:TaskContact="Performs high-performance data extraction, transformation and loading;Microsoft Corporation; Microsoft SQL Server; (C) Microsoft Corporation; All Rights Reserved; http://www.microsoft.com/sql/support/default.asp;1" DTS:ThreadHint="0">
+      <DTS:Variables />
+      <DTS:ObjectData>
+        <pipeline version="1">
+          <components>
+            <component refId="Package\Load Staging\Source Sales" componentClassID="Microsoft.OLEDBSource" contactInfo="OLE DB Source;Microsoft Corporation; Microsoft SQL Server; (C) Microsoft Corporation; All Rights Reserved; http://www.microsoft.com/sql/support;7" description="OLE DB Source" name="Source Sales" usesDispositions="true" version="7">
+              <properties>
+                <property dataType="System.Int32" description="The number of seconds before a command times out." name="CommandTimeout">0</property>
+                <property dataType="System.String" description="Specifies the name of the database object used to open a rowset." name="OpenRowset"></property>
+                <property dataType="System.String" description="The SQL command to be executed." name="SqlCommand" UITypeEditor="Microsoft.DataTransformationServices.Controls.ModalMultilineStringEditor">SELECT s.SaleID, s.CustomerID, s.Amount, s.SaleDate
+FROM dbo.Sales s
+WHERE s.SaleDate &gt;= DATEADD(day, -3, GETDATE())
+  AND s.IsVoid = 0</property>
+                <property dataType="System.Int32" description="Specifies the mode used to access the database." name="AccessMode" typeConverter="AccessMode">2</property>
+              </properties>
+              <connections>
+                <connection refId="Package\Load Staging\Source Sales.Connections[OleDbConnection]" connectionManagerID="{B1000000-0000-0000-0000-000000000001}:external" connectionManagerRefId="Package.ConnectionManagers[Warehouse]" description="The OLE DB runtime connection used to access the database." name="OleDbConnection" />
+              </connections>
+              <outputs>
+                <output refId="Package\Load Staging\Source Sales.Outputs[OLE DB Source Output]" name="OLE DB Source Output">
+                  <outputColumns>
+                    <outputColumn refId="Package\Load Staging\Source Sales.Outputs[OLE DB Source Output].Columns[SaleID]" dataType="i4" errorOrTruncationOperation="Conversion" errorRowDisposition="FailComponent" externalMetadataColumnId="Package\Load Staging\Source Sales.Outputs[OLE DB Source Output].ExternalColumns[SaleID]" lineageId="Package\Load Staging\Source Sales.Outputs[OLE DB Source Output].Columns[SaleID]" name="SaleID" truncationRowDisposition="FailComponent" />
+                    <outputColumn refId="Package\Load Staging\Source Sales.Outputs[OLE DB Source Output].Columns[CustomerID]" dataType="i4" errorOrTruncationOperation="Conversion" errorRowDisposition="FailComponent" externalMetadataColumnId="Package\Load Staging\Source Sales.Outputs[OLE DB Source Output].ExternalColumns[CustomerID]" lineageId="Package\Load Staging\Source Sales.Outputs[OLE DB Source Output].Columns[CustomerID]" name="CustomerID" truncationRowDisposition="FailComponent" />
+                    <outputColumn refId="Package\Load Staging\Source Sales.Outputs[OLE DB Source Output].Columns[Amount]" dataType="numeric" precision="18" scale="2" errorOrTruncationOperation="Conversion" errorRowDisposition="FailComponent" externalMetadataColumnId="Package\Load Staging\Source Sales.Outputs[OLE DB Source Output].ExternalColumns[Amount]" lineageId="Package\Load Staging\Source Sales.Outputs[OLE DB Source Output].Columns[Amount]" name="Amount" truncationRowDisposition="FailComponent" />
+                    <outputColumn refId="Package\Load Staging\Source Sales.Outputs[OLE DB Source Output].Columns[SaleDate]" dataType="dbTimeStamp" errorOrTruncationOperation="Conversion" errorRowDisposition="FailComponent" externalMetadataColumnId="Package\Load Staging\Source Sales.Outputs[OLE DB Source Output].ExternalColumns[SaleDate]" lineageId="Package\Load Staging\Source Sales.Outputs[OLE DB Source Output].Columns[SaleDate]" name="SaleDate" truncationRowDisposition="FailComponent" />
+                  </outputColumns>
+                  <externalMetadataColumns isUsed="True">
+                    <externalMetadataColumn refId="Package\Load Staging\Source Sales.Outputs[OLE DB Source Output].ExternalColumns[SaleID]" dataType="i4" name="SaleID" />
+                    <externalMetadataColumn refId="Package\Load Staging\Source Sales.Outputs[OLE DB Source Output].ExternalColumns[CustomerID]" dataType="i4" name="CustomerID" />
+                    <externalMetadataColumn refId="Package\Load Staging\Source Sales.Outputs[OLE DB Source Output].ExternalColumns[Amount]" dataType="numeric" precision="18" scale="2" name="Amount" />
+                    <externalMetadataColumn refId="Package\Load Staging\Source Sales.Outputs[OLE DB Source Output].ExternalColumns[SaleDate]" dataType="dbTimeStamp" name="SaleDate" />
+                  </externalMetadataColumns>
+                </output>
+                <output refId="Package\Load Staging\Source Sales.Outputs[OLE DB Source Error Output]" isErrorOut="true" name="OLE DB Source Error Output">
+                  <outputColumns>
+                    <outputColumn refId="Package\Load Staging\Source Sales.Outputs[OLE DB Source Error Output].Columns[ErrorCode]" dataType="i4" lineageId="Package\Load Staging\Source Sales.Outputs[OLE DB Source Error Output].Columns[ErrorCode]" name="ErrorCode" specialFlags="1" />
+                  </outputColumns>
+                  <externalMetadataColumns />
+                </output>
+              </outputs>
+            </component>
+            <component refId="Package\Load Staging\Derive Flags" componentClassID="Microsoft.DerivedColumn" contactInfo="Derived Column;Microsoft Corporation; Microsoft SQL Server; (C) Microsoft Corporation; All Rights Reserved; http://www.microsoft.com/sql/support;0" description="Derived Column" name="Derive Flags" usesDispositions="true">
+              <inputs>
+                <input refId="Package\Load Staging\Derive Flags.Inputs[Derived Column Input]" description="Input to the Derived Column Transformation" name="Derived Column Input">
+                  <inputColumns>
+                    <inputColumn refId="Package\Load Staging\Derive Flags.Inputs[Derived Column Input].Columns[Amount]" cachedDataType="numeric" cachedName="Amount" cachedPrecision="18" cachedScale="2" lineageId="Package\Load Staging\Source Sales.Outputs[OLE DB Source Output].Columns[Amount]" />
+                  </inputColumns>
+                  <externalMetadataColumns />
+                </input>
+              </inputs>
+              <outputs>
+                <output refId="Package\Load Staging\Derive Flags.Outputs[Derived Column Output]" description="Default Output of the Derived Column Transformation" exclusionGroup="1" name="Derived Column Output" synchronousInputId="Package\Load Staging\Derive Flags.Inputs[Derived Column Input]">
+                  <outputColumns>
+                    <outputColumn refId="Package\Load Staging\Derive Flags.Outputs[Derived Column Output].Columns[IsLarge]" dataType="bool" errorOrTruncationOperation="Computation" errorRowDisposition="FailComponent" lineageId="Package\Load Staging\Derive Flags.Outputs[Derived Column Output].Columns[IsLarge]" name="IsLarge" truncationRowDisposition="FailComponent">
+                      <properties>
+                        <property containsID="true" dataType="System.String" description="Derived Column Expression" name="Expression">#{Package\Load Staging\Source Sales.Outputs[OLE DB Source Output].Columns[Amount]} &gt; 2500</property>
+                        <property dataType="System.String" description="Derived Column Friendly Expression" expressionType="Notify" name="FriendlyExpression">Amount &gt; 2500</property>
+                      </properties>
+                    </outputColumn>
+                  </outputColumns>
+                  <externalMetadataColumns />
+                </output>
+              </outputs>
+            </component>
+            <component refId="Package\Load Staging\Dest Staging" componentClassID="Microsoft.OLEDBDestination" contactInfo="OLE DB Destination;Microsoft Corporation; Microsoft SQL Server; (C) Microsoft Corporation; All Rights Reserved; http://www.microsoft.com/sql/support;4" description="OLE DB Destination" name="Dest Staging" usesDispositions="true" version="4">
+              <properties>
+                <property dataType="System.Int32" description="The number of seconds before a command times out." name="CommandTimeout">0</property>
+                <property dataType="System.String" description="Specifies the name of the database object used to open a rowset." name="OpenRowset">[stg].[Sales]</property>
+                <property dataType="System.Int32" description="Specifies the mode used to access the database." name="AccessMode" typeConverter="AccessMode">3</property>
+                <property dataType="System.Boolean" description="Indicates whether the values supplied for identity columns will be copied to the destination." name="FastLoadKeepIdentity">false</property>
+                <property dataType="System.String" description="Specifies options to be used with fast load." name="FastLoadOptions">TABLOCK</property>
+                <property dataType="System.Int32" description="Specifies when commits are issued during data insertion." name="FastLoadMaxInsertCommitSize">2147483647</property>
+              </properties>
+              <connections>
+                <connection refId="Package\Load Staging\Dest Staging.Connections[OleDbConnection]" connectionManagerID="{B1000000-0000-0000-0000-000000000001}:external" connectionManagerRefId="Package.ConnectionManagers[Warehouse]" description="The OLE DB runtime connection used to access the database." name="OleDbConnection" />
+              </connections>
+              <inputs>
+                <input refId="Package\Load Staging\Dest Staging.Inputs[OLE DB Destination Input]" errorOrTruncationOperation="Insert" errorRowDisposition="FailComponent" hasSideEffects="true" name="OLE DB Destination Input">
+                  <inputColumns>
+                    <inputColumn refId="Package\Load Staging\Dest Staging.Inputs[OLE DB Destination Input].Columns[SaleID]" cachedDataType="i4" cachedName="SaleID" externalMetadataColumnId="Package\Load Staging\Dest Staging.Inputs[OLE DB Destination Input].ExternalColumns[SaleID]" lineageId="Package\Load Staging\Source Sales.Outputs[OLE DB Source Output].Columns[SaleID]" />
+                    <inputColumn refId="Package\Load Staging\Dest Staging.Inputs[OLE DB Destination Input].Columns[CustomerID]" cachedDataType="i4" cachedName="CustomerID" externalMetadataColumnId="Package\Load Staging\Dest Staging.Inputs[OLE DB Destination Input].ExternalColumns[CustomerID]" lineageId="Package\Load Staging\Source Sales.Outputs[OLE DB Source Output].Columns[CustomerID]" />
+                    <inputColumn refId="Package\Load Staging\Dest Staging.Inputs[OLE DB Destination Input].Columns[Amount]" cachedDataType="numeric" cachedName="Amount" cachedPrecision="18" cachedScale="2" externalMetadataColumnId="Package\Load Staging\Dest Staging.Inputs[OLE DB Destination Input].ExternalColumns[Amount]" lineageId="Package\Load Staging\Source Sales.Outputs[OLE DB Source Output].Columns[Amount]" />
+                  </inputColumns>
+                  <externalMetadataColumns isUsed="True">
+                    <externalMetadataColumn refId="Package\Load Staging\Dest Staging.Inputs[OLE DB Destination Input].ExternalColumns[SaleID]" dataType="i4" name="SaleID" />
+                    <externalMetadataColumn refId="Package\Load Staging\Dest Staging.Inputs[OLE DB Destination Input].ExternalColumns[CustomerID]" dataType="i4" name="CustomerID" />
+                    <externalMetadataColumn refId="Package\Load Staging\Dest Staging.Inputs[OLE DB Destination Input].ExternalColumns[Amount]" dataType="numeric" precision="18" scale="2" name="Amount" />
+                  </externalMetadataColumns>
+                </input>
+              </inputs>
+            </component>
+          </components>
+          <paths>
+            <path refId="Package\Load Staging.Paths[OLE DB Source Output]" endId="Package\Load Staging\Derive Flags.Inputs[Derived Column Input]" name="OLE DB Source Output" startId="Package\Load Staging\Source Sales.Outputs[OLE DB Source Output]" />
+            <path refId="Package\Load Staging.Paths[Derived Column Output]" endId="Package\Load Staging\Dest Staging.Inputs[OLE DB Destination Input]" name="Derived Column Output" startId="Package\Load Staging\Derive Flags.Outputs[Derived Column Output]" />
+          </paths>
+        </pipeline>
+      </DTS:ObjectData>
+    </DTS:Executable>
+    <DTS:Executable DTS:refId="Package\Merge to Fact" DTS:CreationName="Microsoft.ExecuteSQLTask" DTS:Description="Execute SQL Task" DTS:DTSID="{D1000000-0000-0000-0000-000000000003}" DTS:ExecutableType="Microsoft.ExecuteSQLTask" DTS:LocaleID="-1" DTS:ObjectName="Merge to Fact" DTS:TaskContact="Execute SQL Task; Microsoft Corporation; SQL Server 2019; © 2019 Microsoft Corporation; All Rights Reserved;http://www.microsoft.com/sql/support/default.asp;1" DTS:ThreadHint="3">
+      <DTS:Variables />
+      <DTS:ObjectData>
+        <SQLTask:SqlTaskData xmlns:SQLTask="www.microsoft.com/sqlserver/dts/tasks/sqltask" SQLTask:Connection="{B1000000-0000-0000-0000-000000000001}" SQLTask:SqlStatementSource="MERGE dbo.FactSales AS t&#xA;USING stg.Sales AS s ON t.SaleID = s.SaleID&#xA;WHEN MATCHED THEN UPDATE SET t.Amount = s.Amount&#xA;WHEN NOT MATCHED THEN INSERT (SaleID, CustomerID, Amount, SaleDate)&#xA;  VALUES (s.SaleID, s.CustomerID, s.Amount, s.SaleDate)&#xA;WHEN NOT MATCHED BY SOURCE AND t.SaleDate &gt;= DATEADD(day, -3, GETDATE()) THEN DELETE;" SQLTask:ResultType="ResultSetType_None" SQLTask:TimeOut="0">
+          <SQLTask:ParameterBinding SQLTask:ParameterName="0" SQLTask:DtsVariableName="User::BatchSize" SQLTask:ParameterDirection="Input" SQLTask:DataType="3" SQLTask:ParameterSize="-1" />
+        </SQLTask:SqlTaskData>
+      </DTS:ObjectData>
+    </DTS:Executable>
+    <DTS:Executable DTS:refId="Package\Audit Row Counts" DTS:CreationName="Microsoft.ScriptTask" DTS:Description="Script Task" DTS:DTSID="{D1000000-0000-0000-0000-000000000004}" DTS:ExecutableType="Microsoft.ScriptTask" DTS:LocaleID="-1" DTS:ObjectName="Audit Row Counts" DTS:ThreadHint="2">
+      <DTS:Variables />
+      <DTS:ObjectData>
+        <ScriptProject Name="ST_a1b2c3" VSTAMajorVersion="15" VSTAMinorVersion="0" Language="CSharp" EntryPoint="ScriptMain" ReadOnlyVariables="User::BatchSize,User::RunDate" ReadWriteVariables="">
+          <ProjectItem Name="ScriptMain.cs" Encoding="UTF8"><![CDATA[using System;
+using Microsoft.SqlServer.Dts.Runtime;
+
+namespace ST_a1b2c3
+{
+    public partial class ScriptMain : VSTARTScriptObjectModelBase
+    {
+        public void Main()
+        {
+            int batch = (int)Dts.Variables["User::BatchSize"].Value;
+            bool fireAgain = true;
+            string runDate = Dts.Variables["User::RunDate"].Value.ToString();
+            Dts.Events.FireInformation(0, "Audit", "Batch size " + batch + " run " + runDate, "", 0, ref fireAgain);
+            Dts.TaskResult = (int)ScriptResults.Success;
+        }
+    }
+}
+]]></ProjectItem>
+          <BinaryItem Name="\bin\Release\ST_a1b2c3.dll">TVqQAAMAAAAEAAAA//8AALgAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA6AAAAA4fug4AtAnNIbgBTM0hVGhpcyBwcm9ncmFtIGNhbm5vdCBiZSBydW4gaW4gRE9TIG1vZGUuZmZmZg==</BinaryItem>
+        </ScriptProject>
+      </DTS:ObjectData>
+    </DTS:Executable>
+    <DTS:Executable DTS:refId="Package\Notify" DTS:CreationName="Microsoft.SendMailTask" DTS:Description="Send Mail Task" DTS:DTSID="{D1000000-0000-0000-0000-000000000005}" DTS:ExecutableType="Microsoft.SendMailTask" DTS:LocaleID="-1" DTS:ObjectName="Notify" DTS:ThreadHint="4">
+      <DTS:Variables />
+      <DTS:ObjectData>
+        <SendMailTask:SendMailTaskData xmlns:SendMailTask="www.microsoft.com/sqlserver/dts/tasks/sendmailtask" SendMailTask:SMTPServer="{B1000000-0000-0000-0000-000000000002}" SendMailTask:From="etl@example.org" SendMailTask:To="vali@example.org" SendMailTask:Subject="LoadSales finished" SendMailTask:MessageSource="LoadSales completed for @[User::RunDate]" SendMailTask:Priority="Normal" />
+      </DTS:ObjectData>
+    </DTS:Executable>
+  </DTS:Executables>
+  <DTS:PrecedenceConstraints>
+    <DTS:PrecedenceConstraint DTS:refId="Package.PrecedenceConstraints[Constraint 1]" DTS:CreationName="" DTS:DTSID="{E1000000-0000-0000-0000-000000000001}" DTS:From="Package\Truncate Staging" DTS:LogicalAnd="True" DTS:ObjectName="Constraint 1" DTS:To="Package\Load Staging" />
+    <DTS:PrecedenceConstraint DTS:refId="Package.PrecedenceConstraints[Constraint 2]" DTS:CreationName="" DTS:DTSID="{E1000000-0000-0000-0000-000000000002}" DTS:From="Package\Load Staging" DTS:LogicalAnd="True" DTS:ObjectName="Constraint 2" DTS:To="Package\Merge to Fact" />
+    <DTS:PrecedenceConstraint DTS:refId="Package.PrecedenceConstraints[Constraint 3]" DTS:CreationName="" DTS:DTSID="{E1000000-0000-0000-0000-000000000003}" DTS:From="Package\Merge to Fact" DTS:LogicalAnd="True" DTS:ObjectName="Constraint 3" DTS:To="Package\Audit Row Counts" DTS:EvalOp="Expression" DTS:Expression="@[User::BatchSize] &gt; 0" />
+    <DTS:PrecedenceConstraint DTS:refId="Package.PrecedenceConstraints[Constraint 4]" DTS:CreationName="" DTS:DTSID="{E1000000-0000-0000-0000-000000000004}" DTS:From="Package\Audit Row Counts" DTS:LogicalAnd="True" DTS:ObjectName="Constraint 4" DTS:To="Package\Notify" />
+  </DTS:PrecedenceConstraints>
+  <DTS:DesignTimeProperties><![CDATA[<?xml version="1.0"?>
+<!--This CDATA section contains the layout information of the package. The section includes information such as (x,y) coordinates, width, and height.-->
+<!--If you manually edit this section and make a mistake, you can delete it. -->
+<!--The package will still be able to load normally but the previous layout information will be lost and the designer will automatically re-arrange the elements on the design surface.-->
+<Objects Version="8">
+  <!--Each node below will contain properties that do not affect runtime behavior.-->
+  <Package design-time-name="Package">
+    <LayoutInfo>
+      <GraphLayout Capacity="8" xmlns="clr-namespace:Microsoft.SqlServer.IntegrationServices.Designer.Model.Serialization;assembly=Microsoft.SqlServer.IntegrationServices.Graph">
+        <NodeLayout Size="151,42" Id="Package\Truncate Staging" TopLeft="212,48" />
+        <NodeLayout Size="151,42" Id="Package\Load Staging" TopLeft="212,131" />
+        <NodeLayout Size="151,42" Id="Package\Merge to Fact" TopLeft="212,214" />
+        <NodeLayout Size="151,42" Id="Package\Audit Row Counts" TopLeft="212,297" />
+        <NodeLayout Size="151,42" Id="Package\Notify" TopLeft="212,380" />
+      </GraphLayout>
+    </LayoutInfo>
+  </Package>
+</Objects>]]></DTS:DesignTimeProperties>
+</DTS:Executable>

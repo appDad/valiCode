@@ -1,0 +1,1363 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Code Compare</title>
+<meta name="description" content="Single-file, offline, side-by-side diff for code, SQL and SSIS packages. No install, no network, no dependencies.">
+<style>
+  :root {
+    --bg: #ffffff; --bg2: #f5f6f8; --bg3: #eceef1; --fg: #1b1f24; --fg2: #57606a; --border: #d0d7de;
+    --accent: #0b5cad; --accent-fg: #ffffff;
+    --add-bg: #dafbe1; --add-strong: #abf2bc; --add-fg: #116329;
+    --del-bg: #ffebe9; --del-strong: #ffc1bd; --del-fg: #82071e;
+    --mod-bg: #fff8c5; --mod-strong: #ffe58f;
+    --gutter: #f0f2f4; --gutter-fg: #8c959f; --focus: #ffd33d;
+    --mono: ui-monospace, "Cascadia Mono", "Consolas", "SFMono-Regular", Menlo, monospace;
+    --sans: system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0d1117; --bg2: #161b22; --bg3: #21262d; --fg: #e6edf3; --fg2: #9aa4b2; --border: #30363d;
+      --accent: #58a6ff; --accent-fg: #0d1117;
+      --add-bg: #12261e; --add-strong: #1f5a35; --add-fg: #7ee787;
+      --del-bg: #2d1316; --del-strong: #7a2328; --del-fg: #ffa198;
+      --mod-bg: #2a2410; --mod-strong: #5c4a0f;
+      --gutter: #161b22; --gutter-fg: #6e7681; --focus: #d29922;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0d1117; --bg2: #161b22; --bg3: #21262d; --fg: #e6edf3; --fg2: #9aa4b2; --border: #30363d;
+    --accent: #58a6ff; --accent-fg: #0d1117;
+    --add-bg: #12261e; --add-strong: #1f5a35; --add-fg: #7ee787;
+    --del-bg: #2d1316; --del-strong: #7a2328; --del-fg: #ffa198;
+    --mod-bg: #2a2410; --mod-strong: #5c4a0f;
+    --gutter: #161b22; --gutter-fg: #6e7681; --focus: #d29922;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--bg); color: var(--fg); font: 14px/1.4 var(--sans); display: flex; flex-direction: column; min-height: 100vh; }
+  button, select, input, textarea { font: inherit; color: inherit; }
+  button { background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; cursor: pointer; }
+  button:hover { border-color: var(--fg2); }
+  button.primary { background: var(--accent); color: var(--accent-fg); border-color: transparent; font-weight: 600; }
+  button:disabled { opacity: .5; cursor: default; }
+  label.chk { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; cursor: pointer; }
+  select { background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; }
+  input[type=number] { width: 3.5em; background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; padding: 3px 4px; }
+  input[type=text] { background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; }
+  a { color: var(--accent); }
+  kbd { font: 11px var(--mono); background: var(--bg3); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; }
+
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 8px 16px; border-bottom: 1px solid var(--border); background: var(--bg2); position: sticky; top: 0; z-index: 5; }
+  header h1 { font-size: 16px; margin: 0 8px 0 0; }
+  header .tabs button { border-radius: 0; margin-left: -1px; }
+  header .tabs button:first-child { border-radius: 6px 0 0 6px; margin-left: 0; }
+  header .tabs button:last-child { border-radius: 0 6px 6px 0; }
+  header .tabs button.on { background: var(--accent); color: var(--accent-fg); border-color: transparent; }
+  header .spacer { flex: 1; }
+  main { flex: 1; display: flex; flex-direction: column; padding: 0 16px 16px; gap: 10px; }
+
+  .inputs { display: grid; grid-template-columns: 1fr auto 1fr; gap: 10px; align-items: stretch; margin-top: 10px; }
+  .pane { border: 1px solid var(--border); border-radius: 8px; background: var(--bg2); display: flex; flex-direction: column; min-width: 0; }
+  .pane.drag { outline: 2px dashed var(--accent); outline-offset: -4px; }
+  .pane .ph { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  .pane .ph .name { font-family: var(--mono); font-size: 12px; color: var(--fg2); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pane .ph input[type=text] { flex: 1; min-width: 0; font-family: var(--mono); font-size: 12px; }
+  .pane textarea { flex: 1; width: 100%; min-height: 140px; resize: vertical; border: 0; background: transparent; padding: 8px; font: 12px/1.45 var(--mono); outline: none; white-space: pre; overflow: auto; tab-size: 4; }
+  .pane .hint { font-size: 11px; color: var(--fg2); padding: 2px 8px 6px; }
+  .mid { display: flex; flex-direction: column; justify-content: center; gap: 6px; }
+  .mid button { padding: 6px 8px; }
+  .inputs.collapsed .pane textarea { min-height: 0; height: 0; padding: 0; overflow: hidden; }
+  .inputs.collapsed .pane .hint { display: none; }
+
+  .options { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg2); font-size: 13px; }
+  .options .grp { display: inline-flex; gap: 8px; align-items: center; padding-right: 14px; border-right: 1px solid var(--border); }
+  .options .grp:last-child { border-right: 0; }
+  .options .grp b { font-weight: 600; color: var(--fg2); }
+  details.adv { width: 100%; }
+  details.adv summary { cursor: pointer; color: var(--fg2); font-size: 12px; }
+  details.adv .body { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 6px; }
+
+  .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .toolbar .stats { display: inline-flex; gap: 10px; font-size: 13px; }
+  .toolbar .stats .a { color: var(--add-fg); font-weight: 600; }
+  .toolbar .stats .d { color: var(--del-fg); font-weight: 600; }
+  .toolbar .spacer { flex: 1; }
+  .toolbar .pos { font-variant-numeric: tabular-nums; color: var(--fg2); font-size: 13px; }
+
+  .result { border: 1px solid var(--border); border-radius: 8px; overflow: auto; background: var(--bg); flex: 1; min-height: 200px; }
+  .result:empty { display: none; }
+  table.diff { border-collapse: collapse; width: 100%; font: 12px/1.45 var(--mono); table-layout: fixed; }
+  table.diff td { padding: 0 6px; vertical-align: top; white-space: pre; }
+  table.diff.wrap td.c { white-space: pre-wrap; word-break: break-all; }
+  table.diff td.n { width: 3.6em; text-align: right; color: var(--gutter-fg); background: var(--gutter); user-select: none; border-right: 1px solid var(--border); }
+  table.diff td.c { border-right: 1px solid var(--border); }
+  table.diff td.c:last-child { border-right: 0; }
+  table.diff tr.add td.c.r, table.diff tr.add td.c.u { background: var(--add-bg); }
+  table.diff tr.del td.c.l, table.diff tr.del td.c.u { background: var(--del-bg); }
+  table.diff tr.mod td.c.l { background: var(--del-bg); }
+  table.diff tr.mod td.c.r { background: var(--add-bg); }
+  table.diff tr.mod td.c.u.l { background: var(--del-bg); }
+  table.diff tr.mod td.c.u.r { background: var(--add-bg); }
+  table.diff tr.add td.n.r, table.diff tr.mod td.n.r { background: var(--add-strong); color: var(--add-fg); }
+  table.diff tr.del td.n.l, table.diff tr.mod td.n.l { background: var(--del-strong); color: var(--del-fg); }
+  table.diff tr.blank td.c { background: repeating-linear-gradient(45deg, transparent 0 6px, var(--bg3) 6px 8px); }
+  table.diff mark { background: transparent; color: inherit; border-radius: 2px; }
+  table.diff tr.mod td.l mark, table.diff tr.del td.l mark { background: var(--del-strong); }
+  table.diff tr.mod td.r mark, table.diff tr.add td.r mark { background: var(--add-strong); }
+  table.diff tr.fold td { background: var(--bg3); color: var(--fg2); text-align: center; cursor: pointer; padding: 2px; font-family: var(--sans); font-size: 12px; white-space: normal; }
+  table.diff tr.fold td:hover { color: var(--accent); }
+  table.diff tr.cur td.n { outline: 2px solid var(--focus); outline-offset: -2px; }
+  table.diff tr.eq.hide { display: none; }
+  table.diff td.sign { width: 1.4em; text-align: center; color: var(--gutter-fg); background: var(--gutter); user-select: none; }
+  table.diff tr.add td.sign { color: var(--add-fg); background: var(--add-strong); }
+  table.diff tr.del td.sign { color: var(--del-fg); background: var(--del-strong); }
+
+  .msg { padding: 12px; color: var(--fg2); }
+  .err { color: var(--del-fg); }
+
+  /* folder mode */
+  .folders { display: none; flex-direction: column; gap: 10px; margin-top: 10px; }
+  .folders.on { display: flex; }
+  .folders .inputs { margin-top: 0; }
+  .folders .drop { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 18px; color: var(--fg2); min-height: 110px; text-align: center; }
+  .folders .drop b { color: var(--fg); }
+  table.ftab { border-collapse: collapse; width: 100%; font-size: 13px; }
+  table.ftab th, table.ftab td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  table.ftab td.p { font-family: var(--mono); font-size: 12px; white-space: normal; word-break: break-all; }
+  table.ftab tr.same td.s { color: var(--fg2); }
+  table.ftab tr.modified td.s { color: var(--mod-strong); font-weight: 600; }
+  :root[data-theme="light"] table.ftab tr.modified td.s, table.ftab tr.modified td.s { color: #9a6700; }
+  table.ftab tr.added td.s { color: var(--add-fg); font-weight: 600; }
+  table.ftab tr.removed td.s { color: var(--del-fg); font-weight: 600; }
+  table.ftab tr.clickable { cursor: pointer; }
+  table.ftab tr.clickable:hover td { background: var(--bg3); }
+  .ftab-wrap { border: 1px solid var(--border); border-radius: 8px; overflow: auto; max-height: 60vh; }
+
+  /* SSIS object view */
+  .cards { padding: 10px; display: flex; flex-direction: column; gap: 10px; font-family: var(--sans); }
+  .summary { font-size: 13px; color: var(--fg2); display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  .card { border: 1px solid var(--border); border-radius: 8px; background: var(--bg2); overflow: hidden; }
+  .card .ch { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--border); }
+  .card .ch b { font-size: 14px; }
+  .card .kind { color: var(--fg2); font-size: 12px; }
+  .card .path { color: var(--fg2); font-family: var(--mono); font-size: 11px; margin-left: auto; }
+  .badge { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 10px; text-transform: uppercase; letter-spacing: .3px; }
+  .card.modified .badge { background: var(--mod-strong); color: var(--fg); }
+  .card.added .badge { background: var(--add-strong); color: var(--add-fg); }
+  .card.removed .badge { background: var(--del-strong); color: var(--del-fg); }
+  .card.renamed .badge { background: var(--bg3); color: var(--fg); }
+  .card.same { opacity: .75; }
+  .card.same .badge { background: var(--bg3); color: var(--fg2); }
+  .card.cur { outline: 2px solid var(--focus); }
+  table.props { border-collapse: collapse; width: 100%; font-size: 12px; }
+  table.props th { text-align: left; padding: 4px 10px; color: var(--fg2); font-weight: 600; background: var(--bg3); }
+  table.props td { padding: 3px 10px; border-top: 1px solid var(--border); vertical-align: top; font-family: var(--mono); white-space: pre-wrap; word-break: break-word; }
+  table.props td.pn { font-family: var(--sans); font-weight: 600; width: 22%; }
+  table.props td.old { background: var(--del-bg); width: 39%; }
+  table.props td.new { background: var(--add-bg); width: 39%; }
+  table.props td.old mark { background: var(--del-strong); color: inherit; }
+  table.props td.new mark { background: var(--add-strong); color: inherit; }
+  table.props td.big { padding: 0; }
+  table.props td.big .pn { font-family: var(--sans); font-weight: 600; padding: 4px 10px; background: var(--bg3); }
+  table.props td.big table.diff { font-size: 12px; }
+  .card details { padding: 4px 10px; font-size: 12px; color: var(--fg2); }
+  .card details summary { cursor: pointer; }
+  .card details table.props { margin-top: 4px; }
+  .card.same .ch { border-bottom: 0; }
+
+  footer { font-size: 11px; color: var(--fg2); padding: 6px 16px; border-top: 1px solid var(--border); display: flex; flex-wrap: wrap; gap: 12px; }
+  @media (max-width: 800px) {
+    .inputs { grid-template-columns: 1fr; }
+    .mid { flex-direction: row; justify-content: center; }
+  }
+  @media print {
+    header, .inputs, .options, .toolbar, footer, .folders { display: none !important; }
+    .result { border: 0; overflow: visible; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Code Compare</h1>
+  <span class="tabs">
+    <button id="tabFiles" class="on" title="Compare two files or pasted text">Files</button>
+    <button id="tabFolders" title="Compare two folders, then drill into any file">Folders</button>
+  </span>
+  <span class="spacer"></span>
+  <button id="btnTheme" title="Toggle light / dark">Theme</button>
+  <button id="btnHelp" title="Keyboard shortcuts and notes">?</button>
+</header>
+
+<main>
+  <section id="filesMode">
+    <div class="inputs" id="inputs">
+      <div class="pane" id="paneL">
+        <div class="ph">
+          <b>Left</b>
+          <input type="text" id="nameL" placeholder="old / original" spellcheck="false">
+          <button class="browse" data-side="L">Open…</button>
+          <input type="file" id="fileL" hidden>
+        </div>
+        <textarea id="txtL" spellcheck="false" placeholder="Paste or drop the ORIGINAL here"></textarea>
+        <div class="hint">Drop a file anywhere on this box, or paste text.</div>
+      </div>
+      <div class="mid">
+        <button id="btnCompare" class="primary" title="Ctrl+Enter">Compare ▶</button>
+        <button id="btnSwap" title="Swap left and right">⇄ Swap</button>
+        <button id="btnClear" title="Clear both sides">Clear</button>
+        <button id="btnCollapse" title="Hide the input boxes to give the diff more room">Hide inputs</button>
+      </div>
+      <div class="pane" id="paneR">
+        <div class="ph">
+          <b>Right</b>
+          <input type="text" id="nameR" placeholder="new / modified" spellcheck="false">
+          <button class="browse" data-side="R">Open…</button>
+          <input type="file" id="fileR" hidden>
+        </div>
+        <textarea id="txtR" spellcheck="false" placeholder="Paste or drop the NEW version here"></textarea>
+        <div class="hint">Drop a file anywhere on this box, or paste text.</div>
+      </div>
+    </div>
+  </section>
+
+  <section id="foldersMode" class="folders">
+    <div class="inputs">
+      <div class="pane" id="dirPaneL">
+        <div class="ph"><b>Left folder</b><span class="name" id="dirNameL">—</span><button class="browsedir" data-side="L">Choose…</button><input type="file" id="dirL" webkitdirectory directory multiple hidden></div>
+        <div class="drop" id="dirDropL"><b>Drop a folder here</b><span>or click Choose… (reads nothing outside the folder you pick)</span></div>
+      </div>
+      <div class="mid">
+        <button id="btnDirCompare" class="primary">Compare ▶</button>
+        <label class="chk" title="Hide files that are identical on both sides"><input type="checkbox" id="dirOnlyDiff" checked> only differences</label>
+      </div>
+      <div class="pane" id="dirPaneR">
+        <div class="ph"><b>Right folder</b><span class="name" id="dirNameR">—</span><button class="browsedir" data-side="R">Choose…</button><input type="file" id="dirR" webkitdirectory directory multiple hidden></div>
+        <div class="drop" id="dirDropR"><b>Drop a folder here</b><span>or click Choose…</span></div>
+      </div>
+    </div>
+    <div class="ftab-wrap" id="dirResult"></div>
+  </section>
+
+  <div class="options" id="options">
+    <span class="grp"><b>Mode</b>
+      <select id="preset" title="Normalisation preset applied to both sides before diffing">
+        <option value="text">Plain text</option>
+        <option value="sql">SQL / T-SQL</option>
+        <option value="xml">XML (pretty-print)</option>
+        <option value="ssis">SSIS package (.dtsx)</option>
+      </select>
+    </span>
+    <span class="grp"><b>Ignore</b>
+      <label class="chk"><input type="checkbox" id="optTrim"> leading/trailing space</label>
+      <label class="chk"><input type="checkbox" id="optWs"> all whitespace</label>
+      <label class="chk"><input type="checkbox" id="optCase"> case</label>
+      <label class="chk"><input type="checkbox" id="optBlank"> blank lines</label>
+    </span>
+    <span class="grp"><b>View</b>
+      <select id="view"><option value="ssis">SSIS objects</option><option value="side">Side by side</option><option value="unified">Unified</option></select>
+      <label class="chk"><input type="checkbox" id="optWrap"> wrap</label>
+      <label class="chk"><input type="checkbox" id="optCollapse" checked> collapse unchanged</label>
+      <label class="chk">context <input type="number" id="optCtx" min="0" max="50" value="3"></label>
+      <label class="chk"><input type="checkbox" id="optInline" checked> highlight within line</label>
+    </span>
+    <details class="adv" id="adv">
+      <summary>XML / SSIS options</summary>
+      <div class="body">
+        <label class="chk"><input type="checkbox" id="xAttrLines" checked> one attribute per line</label>
+        <label class="chk"><input type="checkbox" id="xSortAttrs" checked> sort attributes</label>
+        <label class="chk"><input type="checkbox" id="xStripLayout" checked> drop designer layout (DesignTimeProperties)</label>
+        <label class="chk"><input type="checkbox" id="xStripStamps" checked> drop version/date stamps</label>
+        <label class="chk"><input type="checkbox" id="xStripIds"> drop DTSID / refId GUIDs</label>
+        <span style="color:var(--fg2);font-size:12px">(these apply to the XML text views; the SSIS object view always ignores IDs, stamps and layout)</span>
+        <label class="chk">extra attrs to drop <input type="text" id="xExtra" placeholder="comma-separated names" size="26"></label>
+      </div>
+    </details>
+  </div>
+
+  <div class="toolbar" id="toolbar" hidden>
+    <span class="stats" id="stats"></span>
+    <button id="btnPrev" title="Alt+↑">▲ Prev</button>
+    <button id="btnNext" title="Alt+↓">▼ Next</button>
+    <span class="pos" id="pos"></span>
+    <span class="spacer"></span>
+    <label class="chk" id="lblSame" hidden><input type="checkbox" id="optShowSame"> show unchanged objects</label>
+    <button id="btnExpandAll" title="Show every unchanged line">Expand all</button>
+    <button id="btnCopy" title="Copy unified diff to clipboard">Copy diff</button>
+    <button id="btnSave" title="Save unified diff as .diff text file">Save .diff</button>
+    <button id="btnReport" title="Save this comparison as a standalone HTML page">Save report</button>
+  </div>
+  <div class="result" id="result"></div>
+</main>
+
+<footer>
+  <span>Single file. Runs offline. Nothing leaves this machine.</span>
+  <span><kbd>Ctrl</kbd>+<kbd>Enter</kbd> compare · <kbd>Alt</kbd>+<kbd>↓</kbd>/<kbd>↑</kbd> next/prev change · <kbd>Esc</kbd> back to inputs</span>
+  <span id="verTag">v1.0</span>
+</footer>
+
+<script>
+'use strict';
+/* ===================================================================
+   Diff engine: Myers O(ND) with linear-space middle-snake recursion.
+   Works on arrays of integers (hashed lines or tokens).
+   Returns array of ops: ['=', ai, bi] | ['-', ai] | ['+', bi]
+   =================================================================== */
+function myers(a, b) {
+  const out = [];
+  const N0 = a.length, M0 = b.length;
+  if (N0 === 0 && M0 === 0) return out;
+  const max = N0 + M0;
+  const off = max + 1;
+  const vf = new Int32Array(2 * max + 3);
+  const vb = new Int32Array(2 * max + 3);
+
+  function middleSnake(a0, a1, b0, b1) {
+    const N = a1 - a0, M = b1 - b0;
+    const delta = N - M;
+    const odd = (delta & 1) !== 0;
+    const lim = ((N + M) >> 1) + 1;
+    vf[off + 1] = 0; vb[off + 1] = 0;
+    for (let d = 0; d <= lim; d++) {
+      for (let k = -d; k <= d; k += 2) {
+        let x;
+        if (k === -d || (k !== d && vf[off + k - 1] < vf[off + k + 1])) x = vf[off + k + 1]; else x = vf[off + k - 1] + 1;
+        let y = x - k;
+        const xs = x, ys = y;
+        while (x < N && y < M && a[a0 + x] === b[b0 + y]) { x++; y++; }
+        vf[off + k] = x;
+        if (odd && k >= delta - (d - 1) && k <= delta + (d - 1)) {
+          if (x + vb[off + delta - k] >= N) return [a0 + xs, b0 + ys, a0 + x, b0 + y];
+        }
+      }
+      for (let k = -d; k <= d; k += 2) {
+        let x;
+        if (k === -d || (k !== d && vb[off + k - 1] < vb[off + k + 1])) x = vb[off + k + 1]; else x = vb[off + k - 1] + 1;
+        let y = x - k;
+        const xs = x, ys = y;
+        while (x < N && y < M && a[a1 - 1 - x] === b[b1 - 1 - y]) { x++; y++; }
+        vb[off + k] = x;
+        if (!odd && k >= delta - d && k <= delta + d) {
+          if (x + vf[off + delta - k] >= N) return [a0 + N - x, b0 + M - y, a0 + N - xs, b0 + M - ys];
+        }
+      }
+    }
+    // Should be unreachable; degrade to replace-all.
+    return [a0, b0, a0, b0];
+  }
+
+  // Explicit stack so deep edit scripts cannot blow the JS call stack.
+  const stack = [{ t: 'r', a0: 0, a1: N0, b0: 0, b1: M0 }];
+  while (stack.length) {
+    const job = stack.pop();
+    if (job.t === 'e') { for (const op of job.ops) out.push(op); continue; }
+    let { a0, a1, b0, b1 } = job;
+    while (a0 < a1 && b0 < b1 && a[a0] === b[b0]) { out.push(['=', a0, b0]); a0++; b0++; }
+    const suffix = [];
+    while (a0 < a1 && b0 < b1 && a[a1 - 1] === b[b1 - 1]) { a1--; b1--; suffix.push(['=', a1, b1]); }
+    suffix.reverse();
+    if (a0 === a1) {
+      for (let j = b0; j < b1; j++) out.push(['+', j]);
+      for (const op of suffix) out.push(op);
+    } else if (b0 === b1) {
+      for (let i = a0; i < a1; i++) out.push(['-', i]);
+      for (const op of suffix) out.push(op);
+    } else {
+      const [x, y, u, v] = middleSnake(a0, a1, b0, b1);
+      const snake = [];
+      for (let i = 0; i < u - x; i++) snake.push(['=', x + i, y + i]);
+      if (x === a0 && y === b0 && u === a0 && v === b0) {
+        // degenerate: no progress; treat as full replace
+        for (let i = a0; i < a1; i++) out.push(['-', i]);
+        for (let j = b0; j < b1; j++) out.push(['+', j]);
+        for (const op of suffix) out.push(op);
+        continue;
+      }
+      if (suffix.length) stack.push({ t: 'e', ops: suffix });
+      stack.push({ t: 'r', a0: u, a1, b0: v, b1 });
+      if (snake.length) stack.push({ t: 'e', ops: snake });
+      stack.push({ t: 'r', a0, a1: x, b0, b1: y });
+    }
+  }
+  return out;
+}
+
+/* Hash arrays of strings into ints so comparisons are cheap. */
+function intern(listA, listB) {
+  const map = new Map();
+  const f = s => { let id = map.get(s); if (id === undefined) { id = map.size; map.set(s, id); } return id; };
+  return [listA.map(f), listB.map(f)];
+}
+
+/* ===================================================================
+   Normalisation
+   =================================================================== */
+const SSIS_STAMP_ATTRS = ['DTS:VersionBuild', 'DTS:VersionGUID', 'DTS:CreationDate', 'DTS:CreationName',
+  'DTS:CreatorName', 'DTS:CreatorComputerName', 'DTS:LastModifiedProductVersion', 'DTS:VersionComments',
+  'DTS:ProductVersion', 'DTS:PackageFormatVersion'];
+const SSIS_ID_ATTRS = ['DTS:DTSID', 'DTS:refId', 'refId', 'id', 'lineageId', 'DTS:ObjectName'];
+const SSIS_LAYOUT_ELEMS = ['DTS:DesignTimeProperties', 'DesignTimeProperties', 'Package.Layout'];
+
+function xmlNormalize(text, o) {
+  if (typeof DOMParser === 'undefined') return null;
+  const doc = new DOMParser().parseFromString(text, 'application/xml');
+  if (doc.getElementsByTagName('parsererror').length) return null;
+  const dropAttr = new Set();
+  if (o.stripStamps) SSIS_STAMP_ATTRS.forEach(x => dropAttr.add(x));
+  if (o.stripIds) SSIS_ID_ATTRS.forEach(x => dropAttr.add(x));
+  (o.extra || []).forEach(x => dropAttr.add(x));
+  const dropElem = new Set(o.stripLayout ? SSIS_LAYOUT_ELEMS : []);
+  const lines = [];
+  const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const escA = s => esc(s).replace(/"/g, '&quot;');
+  function walk(node, depth) {
+    const pad = '  '.repeat(depth);
+    switch (node.nodeType) {
+      case 1: { // element
+        const name = node.nodeName;
+        if (dropElem.has(name) || dropElem.has(node.localName)) return;
+        let attrs = Array.from(node.attributes).filter(at => !dropAttr.has(at.name) && !dropAttr.has(at.localName));
+        if (o.sortAttrs) attrs.sort((p, q) => (p.name < q.name ? -1 : p.name > q.name ? 1 : 0));
+        const kids = Array.from(node.childNodes).filter(k => !(k.nodeType === 3 && k.nodeValue.trim() === ''));
+        const onlyText = kids.length === 1 && (kids[0].nodeType === 3 || kids[0].nodeType === 4);
+        const attrStr = attrs.map(at => `${at.name}="${escA(at.value)}"`);
+        let open;
+        if (o.attrLines && attrs.length > 1) {
+          open = `${pad}<${name}`;
+          lines.push(open);
+          attrStr.forEach((s, i) => lines.push(`${pad}    ${s}${i === attrStr.length - 1 ? (kids.length ? '>' : ' />') : ''}`));
+          if (!kids.length) return;
+          open = null;
+        } else {
+          open = `${pad}<${name}${attrStr.length ? ' ' + attrStr.join(' ') : ''}`;
+          if (!kids.length) { lines.push(open + ' />'); return; }
+        }
+        if (onlyText) {
+          const v = kids[0].nodeType === 4 ? '<![CDATA[' + kids[0].nodeValue + ']]>' : esc(kids[0].nodeValue.trim());
+          if (v.indexOf('\n') === -1) {
+            if (open !== null) lines.push(`${open}>${v}</${name}>`);
+            else { lines.push(`${pad}  ${v}`); lines.push(`${pad}</${name}>`); }
+            return;
+          }
+          if (open !== null) lines.push(open + '>');
+          v.split(/\r?\n/).forEach(l => lines.push(pad + '  ' + l));
+          lines.push(`${pad}</${name}>`);
+          return;
+        }
+        if (open !== null) lines.push(open + '>');
+        kids.forEach(k => walk(k, depth + 1));
+        lines.push(`${pad}</${name}>`);
+        break;
+      }
+      case 3: { // text
+        esc(node.nodeValue.trim()).split(/\r?\n/).forEach(l => lines.push(pad + l.trim()));
+        break;
+      }
+      case 4: { // cdata
+        ('<![CDATA[' + node.nodeValue + ']]>').split(/\r?\n/).forEach(l => lines.push(pad + l));
+        break;
+      }
+      case 7: lines.push(`${pad}<?${node.target} ${node.data}?>`); break; // processing instruction
+      case 8: lines.push(`${pad}<!--${node.nodeValue}-->`); break;
+      case 9: Array.from(node.childNodes).forEach(k => walk(k, depth)); break;
+    }
+  }
+  walk(doc, 0);
+  return lines.join('\n');
+}
+
+function sqlNormalize(text) {
+  // Keep statement structure, drop trailing whitespace, unify line endings, collapse tabs.
+  return text.replace(/\r\n?/g, '\n').replace(/\t/g, '    ').replace(/[ \t]+$/gm, '');
+}
+
+function applyPreset(text, opts) {
+  switch (opts.preset) {
+    case 'sql': return { text: sqlNormalize(text) };
+    case 'xml': {
+      const n = xmlNormalize(text, { attrLines: opts.xAttrLines, sortAttrs: opts.xSortAttrs, stripLayout: false, stripStamps: false, stripIds: false, extra: opts.xExtra });
+      return n === null ? { text, warn: 'Not well-formed XML; compared as plain text.' } : { text: n };
+    }
+    case 'ssis': {
+      const n = xmlNormalize(text, { attrLines: opts.xAttrLines, sortAttrs: opts.xSortAttrs, stripLayout: opts.xStripLayout, stripStamps: opts.xStripStamps, stripIds: opts.xStripIds, extra: opts.xExtra });
+      return n === null ? { text, warn: 'Not well-formed XML; compared as plain text.' } : { text: n };
+    }
+    default: return { text };
+  }
+}
+
+function lineKey(line, opts) {
+  let s = line;
+  if (opts.ws) s = s.replace(/\s+/g, '');
+  else if (opts.trim) s = s.trim();
+  if (opts.nocase) s = s.toLowerCase();
+  return s;
+}
+
+/* ===================================================================
+   Build the row model from two texts
+   rows: {t:'eq'|'add'|'del'|'mod', ln, rn, l, r, lh, rh}
+   =================================================================== */
+function tokenize(s) { return s.match(/[A-Za-z0-9_]+|\s+|[^\sA-Za-z0-9_]/g) || []; }
+
+function inlineDiff(l, r, opts) {
+  const tl = tokenize(l), tr = tokenize(r);
+  const [ia, ib] = intern(tl.map(t => lineKey(t, opts)), tr.map(t => lineKey(t, opts)));
+  const ops = myers(ia, ib);
+  let changed = 0;
+  const lh = [], rh = [];
+  for (const op of ops) {
+    if (op[0] === '=') { lh.push([0, tl[op[1]]]); rh.push([0, tr[op[2]]]); }
+    else if (op[0] === '-') { lh.push([1, tl[op[1]]]); changed += tl[op[1]].length; }
+    else { rh.push([1, tr[op[1]]]); changed += tr[op[1]].length; }
+  }
+  // If almost everything changed, inline highlighting is noise.
+  if (changed > 0.7 * (l.length + r.length)) return null;
+  return { lh, rh };
+}
+
+function buildRows(aLines, bLines, opts) {
+  const [ia, ib] = intern(aLines.map(x => lineKey(x, opts)), bLines.map(x => lineKey(x, opts)));
+  const ops = myers(ia, ib);
+  const rows = [];
+  let i = 0;
+  while (i < ops.length) {
+    const op = ops[i];
+    if (op[0] === '=') { rows.push({ t: 'eq', ln: op[1] + 1, rn: op[2] + 1, l: aLines[op[1]], r: bLines[op[2]] }); i++; continue; }
+    const dels = [], adds = [];
+    while (i < ops.length && ops[i][0] !== '=') { (ops[i][0] === '-' ? dels : adds).push(ops[i][1]); i++; }
+    const n = Math.max(dels.length, adds.length);
+    for (let k = 0; k < n; k++) {
+      const di = dels[k], ai = adds[k];
+      if (di !== undefined && ai !== undefined) {
+        const row = { t: 'mod', ln: di + 1, rn: ai + 1, l: aLines[di], r: bLines[ai] };
+        if (opts.inline) { const h = inlineDiff(row.l, row.r, opts); if (h) { row.lh = h.lh; row.rh = h.rh; } }
+        rows.push(row);
+      } else if (di !== undefined) rows.push({ t: 'del', ln: di + 1, l: aLines[di] });
+      else rows.push({ t: 'add', rn: ai + 1, r: bLines[ai] });
+    }
+  }
+  if (opts.blank) {
+    // Drop pure add/del rows whose content is blank when "ignore blank lines" is on.
+    return rows.filter(r => !((r.t === 'add' && r.r.trim() === '') || (r.t === 'del' && r.l.trim() === '')));
+  }
+  return rows;
+}
+
+/* ===================================================================
+   SSIS semantic model.
+   Parse a .dtsx (or .conmgr / .params) into addressable objects:
+   package, containers, tasks, event handlers, variables, parameters,
+   connection managers, precedence constraints, data-flow components,
+   columns and paths. Each object carries only the properties that mean
+   something (SQL, expressions, script code, column metadata, settings).
+   IDs, GUIDs, timestamps, build numbers and designer layout are dropped
+   so two saves of the same logic come out identical.
+   =================================================================== */
+const SSIS = (() => {
+  const NOISE_ATTR = new Set(['DTSID', 'refId', 'id', 'lineageId', 'contactInfo', 'version', 'VersionBuild', 'VersionGUID',
+    'CreationDate', 'CreatorName', 'CreatorComputerName', 'LastModifiedProductVersion', 'ProductVersion', 'ThreadHint',
+    'VSTAMajorVersion', 'VSTAMinorVersion', 'UITypeEditor', 'typeConverter', 'expressionType', 'containsID', 'isArray',
+    'IncludeInDebugDump', 'identificationString', 'externalMetadataColumnId', 'errorOrTruncationOperation', 'cachedLineageId']);
+  const NOISE_PROP = new Set(['BinaryCode', 'BinaryItem', 'PackageFormatVersion', 'VersionBuild', 'VersionGUID', 'CreationDate',
+    'CreatorName', 'CreatorComputerName', 'LastModifiedProductVersion', 'ProductVersion', 'Package.Layout', 'LayoutXml']);
+  const NOISE_ELEM = new Set(['DesignTimeProperties', 'BinaryItem', 'PackageVariables']);
+  const NAME_ATTRS = ['ObjectName', 'Name', 'name', 'ResultName', 'ParameterName', 'DtsVariableName', 'EventName', 'DataType'];
+  const KINDS = {
+    'Microsoft.Package': 'Package', 'STOCK:SEQUENCE': 'Sequence Container', 'STOCK:FOREACHLOOP': 'Foreach Loop',
+    'STOCK:FORLOOP': 'For Loop', 'Microsoft.ExecuteSQLTask': 'Execute SQL Task', 'Microsoft.Pipeline': 'Data Flow Task',
+    'Microsoft.ScriptTask': 'Script Task', 'Microsoft.ExecutePackageTask': 'Execute Package Task', 'Microsoft.SendMailTask': 'Send Mail Task',
+    'Microsoft.FileSystemTask': 'File System Task', 'Microsoft.ExecuteProcess': 'Execute Process Task', 'Microsoft.BulkInsertTask': 'Bulk Insert Task',
+    'Microsoft.FtpTask': 'FTP Task', 'Microsoft.ExpressionTask': 'Expression Task', 'Microsoft.WebServiceTask': 'Web Service Task',
+    'Microsoft.XMLTask': 'XML Task', 'Microsoft.DataProfilingTask': 'Data Profiling Task', 'Microsoft.TransferSqlServerObjectsTask': 'Transfer SQL Server Objects Task',
+    'Microsoft.OLEDBSource': 'OLE DB Source', 'Microsoft.OLEDBDestination': 'OLE DB Destination', 'Microsoft.DerivedColumn': 'Derived Column',
+    'Microsoft.Lookup': 'Lookup', 'Microsoft.ConditionalSplit': 'Conditional Split', 'Microsoft.DataConvert': 'Data Conversion',
+    'Microsoft.FlatFileSource': 'Flat File Source', 'Microsoft.FlatFileDestination': 'Flat File Destination', 'Microsoft.UnionAll': 'Union All',
+    'Microsoft.Sort': 'Sort', 'Microsoft.Aggregate': 'Aggregate', 'Microsoft.MergeJoin': 'Merge Join', 'Microsoft.Merge': 'Merge',
+    'Microsoft.Multicast': 'Multicast', 'Microsoft.RowCount': 'Row Count', 'Microsoft.ScriptComponent': 'Script Component',
+    'Microsoft.ExcelSource': 'Excel Source', 'Microsoft.ExcelDestination': 'Excel Destination', 'Microsoft.OLEDBCommand': 'OLE DB Command',
+    'Microsoft.SQLServerDestination': 'SQL Server Destination', 'Microsoft.ADONETSource': 'ADO NET Source', 'Microsoft.ADONETDestination': 'ADO NET Destination',
+    'Microsoft.SlowlyChangingDimension': 'Slowly Changing Dimension', 'Microsoft.Pivot': 'Pivot', 'Microsoft.UnPivot': 'Unpivot',
+    'Microsoft.CharacterMap': 'Character Map', 'Microsoft.CopyColumn': 'Copy Column', 'Microsoft.RawSource': 'Raw File Source', 'Microsoft.RawDestination': 'Raw File Destination',
+    'Microsoft.RecordSetDestination': 'Recordset Destination', 'Microsoft.XmlSource': 'XML Source', 'Microsoft.BalancedDataDistributor': 'Balanced Data Distributor',
+    'Microsoft.CacheTransform': 'Cache Transform', 'Microsoft.FuzzyLookup': 'Fuzzy Lookup', 'Microsoft.FuzzyGrouping': 'Fuzzy Grouping', 'Microsoft.TermExtraction': 'Term Extraction',
+    'Microsoft.Audit': 'Audit', 'Microsoft.RowSampling': 'Row Sampling', 'Microsoft.PercentageSampling': 'Percentage Sampling', 'Microsoft.ExportColumn': 'Export Column', 'Microsoft.ImportColumn': 'Import Column',
+  };
+  function kindOf(type) {
+    if (!type) return '';
+    if (KINDS[type]) return KINDS[type];
+    let t = type.split(',')[0].trim();            // "Namespace.Class, Assembly, Version=..." -> "Namespace.Class"
+    t = t.replace(/^\{.*\}$/, 'Custom');          // bare GUID
+    t = t.split('.').pop().replace(/^STOCK:/, '');
+    t = t.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/_/g, ' ');
+    return t;
+  }
+  const attr = (el, name) => { for (const at of el.attributes) if (at.localName === name) return at.value; return undefined; };
+  const isNsDecl = at => at.prefix === 'xmlns' || at.name === 'xmlns';
+  const children = (el, ln) => Array.from(el.children).filter(c => !ln || c.localName === ln);
+  function nameOf(el) { for (const n of NAME_ATTRS) { const v = attr(el, n); if (v !== undefined) return v; } return undefined; }
+  function textOf(el) { return (el.textContent || '').replace(/\r\n?/g, '\n'); }
+  function hasElementKids(el) { return el.children.length > 0; }
+  const join = (p, n) => (p ? p + '.' + n : n);
+
+  // Reads DTS attribute first, then the SSIS-2008-style <DTS:Property DTS:Name="x"> child.
+  function A(el, name) {
+    const v = attr(el, name);
+    if (v !== undefined) return v;
+    for (const c of children(el, 'Property')) if (attr(c, 'Name') === name) return textOf(c);
+    return undefined;
+  }
+
+  function newObj(objs, key, kind, name, dtsid) {
+    const o = { key, kind, name, dtsid: dtsid || null, props: new Map() };
+    objs.set(key, o);
+    return o;
+  }
+  function addAttrs(o, el, prefix = '') {
+    for (const at of el.attributes) {
+      if (isNsDecl(at) || NOISE_ATTR.has(at.localName)) continue;
+      if (prefix === '' && (at.localName === 'ObjectName' || at.localName === 'ExecutableType' || at.localName === 'CreationName')) continue;
+      o.props.set(join(prefix, at.localName), at.value);
+    }
+  }
+  // Generic flattening of an element subtree into dotted property names.
+  function flatten(el, prefix, props, skipSelfAttrs = false) {
+    if (!skipSelfAttrs) for (const at of el.attributes) {
+      if (isNsDecl(at) || NOISE_ATTR.has(at.localName)) continue;
+      props.set(join(prefix, at.localName), at.value);
+    }
+    const groups = new Map();
+    for (const c of el.children) { const g = groups.get(c.localName) || []; g.push(c); groups.set(c.localName, g); }
+    for (const [ln, list] of groups) {
+      if (NOISE_ELEM.has(ln)) continue;
+      list.forEach((c, i) => {
+        let label = ln;
+        if (ln === 'Property' || ln === 'property') {
+          const pn = attr(c, 'Name') ?? attr(c, 'name') ?? String(i);
+          if (NOISE_PROP.has(pn)) return;
+          label = pn;
+          if (hasElementKids(c)) flatten(c, join(prefix, label), props, true);
+          else props.set(join(prefix, label), textOf(c));
+          return;
+        }
+        const nm = nameOf(c);
+        if (nm !== undefined && ln !== 'VariableValue') label = `${ln}[${nm}]`;
+        else if (list.length > 1) label = `${ln}[${i}]`;
+        if (hasElementKids(c)) flatten(c, join(prefix, label), props);
+        else {
+          for (const at of c.attributes) { if (isNsDecl(at) || NOISE_ATTR.has(at.localName) || at.localName === 'Name' || at.localName === 'name') continue; props.set(join(prefix, label + '.' + at.localName), at.value); }
+          const t = textOf(c);
+          if (t.trim() !== '' || c.attributes.length === 0) props.set(join(prefix, label), t);
+        }
+      });
+    }
+  }
+
+  function walkExecutable(objs, el, key, kindOverride) {
+    const name = A(el, 'ObjectName') ?? A(el, 'EventName') ?? key.split(/[\\.]/).pop();
+    const type = A(el, 'ExecutableType') ?? A(el, 'CreationName') ?? '';
+    const o = newObj(objs, key, kindOverride || kindOf(type) || 'Executable', name, A(el, 'DTSID'));
+    addAttrs(o, el);
+    for (const c of el.children) {
+      switch (c.localName) {
+        case 'Property': {
+          const pn = attr(c, 'Name');
+          if (pn && !NOISE_PROP.has(pn) && pn !== 'ObjectName' && pn !== 'ExecutableType' && pn !== 'CreationName') o.props.set(pn, textOf(c));
+          break;
+        }
+        case 'PropertyExpression': o.props.set(`Expression[${attr(c, 'Name')}]`, textOf(c)); break;
+        case 'Variables': for (const v of children(c, 'Variable')) walkVariable(objs, v, key); break;
+        case 'PackageParameters': case 'Parameters': for (const v of children(c)) walkParameter(objs, v, key); break;
+        case 'ConnectionManagers': for (const cm of children(c, 'ConnectionManager')) walkConnectionManager(objs, cm, key); break;
+        case 'Executables': for (const x of children(c, 'Executable')) walkExecutable(objs, x, `${key}\\${A(x, 'ObjectName') ?? 'Executable'}`); break;
+        case 'PrecedenceConstraints': for (const pc of children(c, 'PrecedenceConstraint')) walkConstraint(objs, pc, key); break;
+        case 'EventHandlers': for (const eh of children(c, 'EventHandler')) walkExecutable(objs, eh, `${key}.EventHandlers[${attr(eh, 'EventName') ?? 'Event'}]`, 'Event Handler'); break;
+        case 'ObjectData': walkObjectData(objs, o, c, key); break;
+        case 'ForEachEnumerator': { const sub = new Map(); flatten(c, 'Enumerator', sub); for (const [k, v] of sub) o.props.set(k, v); break; }
+        case 'ForEachVariableMappings': { const sub = new Map(); flatten(c, 'VariableMappings', sub, true); for (const [k, v] of sub) o.props.set(k, v); break; }
+        default:
+          if (NOISE_ELEM.has(c.localName)) break;
+          { const sub = new Map(); flatten(c, c.localName, sub); for (const [k, v] of sub) o.props.set(k, v); }
+      }
+    }
+  }
+  function walkVariable(objs, v, parentKey) {
+    const ns = A(v, 'Namespace') ?? 'User', nm = A(v, 'ObjectName') ?? '?';
+    const o = newObj(objs, `${parentKey}.Variables[${ns}::${nm}]`, 'Variable', `${ns}::${nm}`, A(v, 'DTSID'));
+    addAttrs(o, v);
+    for (const c of v.children) {
+      if (c.localName === 'VariableValue') { o.props.set('Value', textOf(c)); const dt = attr(c, 'DataType'); if (dt) o.props.set('DataType', dt); }
+      else if (c.localName === 'Property') { const pn = attr(c, 'Name'); if (pn && pn !== 'ObjectName' && !NOISE_PROP.has(pn)) o.props.set(pn, textOf(c)); }
+      else if (c.localName === 'PropertyExpression') o.props.set(`Expression[${attr(c, 'Name')}]`, textOf(c));
+    }
+    o.props.delete('Namespace');
+  }
+  function walkParameter(objs, p, parentKey) {
+    const nm = A(p, 'ObjectName') ?? A(p, 'Name') ?? '?';
+    const o = newObj(objs, `${parentKey}.Parameters[${nm}]`, 'Parameter', nm, A(p, 'DTSID'));
+    addAttrs(o, p);
+    for (const c of children(p, 'Property')) { const pn = attr(c, 'Name'); if (pn && pn !== 'ObjectName') o.props.set(pn === 'ParameterValue' ? 'Value' : pn, textOf(c)); }
+  }
+  function walkConnectionManager(objs, cm, parentKey) {
+    const nm = A(cm, 'ObjectName') ?? '?';
+    const o = newObj(objs, `${parentKey}.ConnectionManagers[${nm}]`, 'Connection Manager' + (A(cm, 'CreationName') ? ` (${A(cm, 'CreationName')})` : ''), nm, A(cm, 'DTSID'));
+    addAttrs(o, cm);
+    for (const c of cm.children) {
+      if (c.localName === 'ObjectData') { const inner = c.firstElementChild; if (inner) flatten(inner, '', o.props); }
+      else if (c.localName === 'PropertyExpression') o.props.set(`Expression[${attr(c, 'Name')}]`, textOf(c));
+      else if (c.localName === 'Property') { const pn = attr(c, 'Name'); if (pn && pn !== 'ObjectName' && !NOISE_PROP.has(pn)) o.props.set(pn, textOf(c)); }
+    }
+  }
+  function short(id, parentKey) {
+    if (!id) return '';
+    return id.startsWith(parentKey + '\\') ? id.slice(parentKey.length + 1) : id.replace(/^Package\\/, '');
+  }
+  function walkConstraint(objs, pc, parentKey) {
+    const from = A(pc, 'From'), to = A(pc, 'To');
+    const label = from && to ? `${short(from, parentKey)} → ${short(to, parentKey)}` : (A(pc, 'ObjectName') ?? 'Constraint');
+    const o = newObj(objs, `${parentKey}.PrecedenceConstraints[${label}]`, 'Precedence Constraint', label, A(pc, 'DTSID'));
+    addAttrs(o, pc);
+    o.props.delete('From'); o.props.delete('To');
+    for (const c of children(pc, 'Property')) { const pn = attr(c, 'Name'); if (pn && !['ObjectName', 'From', 'To'].includes(pn) && !NOISE_PROP.has(pn)) o.props.set(pn, textOf(c)); }
+    for (const c of children(pc, 'PropertyExpression')) o.props.set(`Expression[${attr(c, 'Name')}]`, textOf(c));
+  }
+  function walkObjectData(objs, o, od, key) {
+    const inner = od.firstElementChild;
+    if (!inner) return;
+    if (inner.localName === 'pipeline') { walkPipeline(objs, inner, key, o); return; }
+    if (inner.localName === 'ScriptProject') {
+      for (const at of inner.attributes) if (!isNsDecl(at) && !NOISE_ATTR.has(at.localName) && at.localName !== 'Name') o.props.set('Script.' + at.localName, at.value);
+      for (const item of children(inner, 'ProjectItem')) {
+        const nm = attr(item, 'Name') || 'item';
+        if (/\.(cs|vb)$/i.test(nm)) o.props.set(`Script: ${nm}`, textOf(item));
+      }
+      return;
+    }
+    // Any other task payload (Execute SQL, Send Mail, File System, ...): flatten its attributes and children directly.
+    flatten(inner, '', o.props);
+  }
+  function walkPipeline(objs, p, key, dft) {
+    for (const at of p.attributes) if (!isNsDecl(at) && !NOISE_ATTR.has(at.localName)) dft.props.set('Pipeline.' + at.localName, at.value);
+    const comps = p.querySelector(':scope > components');
+    if (comps) for (const comp of children(comps, 'component')) {
+      const nm = attr(comp, 'name') ?? '?';
+      const ckey = `${key}\\${nm}`;
+      const o = newObj(objs, ckey, kindOf(attr(comp, 'componentClassID')) || 'Component', nm, attr(comp, 'refId'));
+      for (const at of comp.attributes) if (!isNsDecl(at) && !NOISE_ATTR.has(at.localName) && at.localName !== 'name' && at.localName !== 'componentClassID') o.props.set(at.localName, at.value);
+      for (const c of comp.children) {
+        switch (c.localName) {
+          case 'properties': flatten(c, '', o.props, true); break;
+          case 'connections':
+            for (const cn of children(c, 'connection')) o.props.set(`Connection[${attr(cn, 'name') ?? '?'}]`, (attr(cn, 'connectionManagerRefId') || attr(cn, 'connectionManagerID') || '').replace(/^Package\.ConnectionManagers\[(.*)\]$/, '$1'));
+            break;
+          case 'inputs': for (const inp of children(c, 'input')) walkPort(o, inp, `Input[${attr(inp, 'name') ?? '?'}]`, key); break;
+          case 'outputs': for (const out of children(c, 'output')) walkPort(o, out, `Output[${attr(out, 'name') ?? '?'}]`, key); break;
+          default: flatten(c, c.localName, o.props);
+        }
+      }
+    }
+    const paths = p.querySelector(':scope > paths');
+    if (paths) for (const path of children(paths, 'path')) {
+      const nm = attr(path, 'name') ?? '?';
+      const o = newObj(objs, `${key}.Paths[${nm}]`, 'Data Flow Path', nm, attr(path, 'refId'));
+      o.props.set('From', short(attr(path, 'startId'), key));
+      o.props.set('To', short(attr(path, 'endId'), key));
+    }
+  }
+  function walkPort(o, port, prefix, dftKey) {
+    for (const at of port.attributes) if (!isNsDecl(at) && !NOISE_ATTR.has(at.localName) && at.localName !== 'name' && at.localName !== 'synchronousInputId' && at.localName !== 'exclusionGroup') o.props.set(`${prefix}.${at.localName}`, at.value);
+    const sync = attr(port, 'synchronousInputId'); if (sync) o.props.set(`${prefix}.synchronousInput`, short(sync, dftKey));
+    for (const c of port.children) {
+      const ln = c.localName;
+      if (ln === 'properties') { flatten(c, prefix, o.props, true); continue; }
+      if (ln === 'inputColumns' || ln === 'outputColumns' || ln === 'externalMetadataColumns') {
+        const tag = ln === 'inputColumns' ? 'col' : ln === 'outputColumns' ? 'col' : 'ext';
+        for (const col of c.children) {
+          let nm = attr(col, 'name');
+          if (nm === undefined) { const lid = attr(col, 'lineageId') || ''; const m = lid.match(/\[([^\]]*)\]$/); nm = m ? m[1] : lid; }
+          const cp = `${prefix}.${tag}[${nm}]`;
+          const bits = [];
+          for (const at of col.attributes) {
+            if (isNsDecl(at) || NOISE_ATTR.has(at.localName) || ['name', 'refId', 'lineageId'].includes(at.localName)) continue;
+            bits.push(`${at.localName}=${at.value}`);
+          }
+          const lid = attr(col, 'lineageId'); if (lid && ln === 'inputColumns') bits.unshift('source=' + short(lid, dftKey));
+          o.props.set(cp, bits.join(' '));
+          for (const k of col.children) if (k.localName === 'properties') flatten(k, cp, o.props, true);
+        }
+        continue;
+      }
+      flatten(c, `${prefix}.${ln}`, o.props);
+    }
+  }
+
+  function parse(text) {
+    if (typeof DOMParser === 'undefined') return null;
+    const doc = new DOMParser().parseFromString(text, 'application/xml');
+    if (doc.getElementsByTagName('parsererror').length) return null;
+    const root = doc.documentElement;
+    const objs = new Map();
+    switch (root.localName) {
+      case 'Executable': walkExecutable(objs, root, 'Package'); break;
+      case 'ConnectionManager': walkConnectionManager(objs, root, 'Project'); break;
+      case 'Parameters': for (const p of root.children) walkParameter(objs, p, 'Project'); break;
+      default: { const o = newObj(objs, root.localName, root.localName, root.localName, null); flatten(root, '', o.props); }
+    }
+    return objs;
+  }
+
+  function norm(v, opts) {
+    let s = (v ?? '').replace(/\r\n?/g, '\n');
+    if (opts.ws) s = s.replace(/\s+/g, '');
+    else if (opts.trim) s = s.split('\n').map(x => x.trim()).join('\n');
+    else s = s.replace(/[ \t]+$/gm, '');
+    if (opts.nocase) s = s.toLowerCase();
+    return s;
+  }
+
+  // Diff two parsed packages. Returns ordered list of entries.
+  function diff(A, B, opts) {
+    const out = [];
+    const usedA = new Set();
+    const byDtsidA = new Map();
+    for (const [k, o] of A) if (o.dtsid) byDtsidA.set(o.dtsid, k);
+    function compareProps(oa, ob) {
+      const changes = [];
+      const keys = new Set([...oa.props.keys(), ...ob.props.keys()]);
+      for (const k of keys) {
+        const va = oa.props.get(k), vb = ob.props.get(k);
+        if (va === undefined) changes.push({ name: k, old: undefined, new: vb });
+        else if (vb === undefined) changes.push({ name: k, old: va, new: undefined });
+        else if (norm(va, opts) !== norm(vb, opts)) changes.push({ name: k, old: va, new: vb });
+      }
+      return changes;
+    }
+    for (const [kb, ob] of B) {
+      let ka = A.has(kb) ? kb : (ob.dtsid && byDtsidA.has(ob.dtsid) && !usedA.has(byDtsidA.get(ob.dtsid)) ? byDtsidA.get(ob.dtsid) : null);
+      if (ka === null) { out.push({ st: 'added', key: kb, obj: ob, changes: Array.from(ob.props, ([name, v]) => ({ name, old: undefined, new: v })) }); continue; }
+      usedA.add(ka);
+      const oa = A.get(ka);
+      const changes = compareProps(oa, ob);
+      const renamed = ka !== kb;
+      if (renamed) changes.unshift({ name: '(path)', old: ka, new: kb });
+      out.push({ st: changes.length ? (renamed ? 'renamed' : 'modified') : 'same', key: kb, oldKey: ka, obj: ob, old: oa, changes });
+    }
+    for (const [ka, oa] of A) if (!usedA.has(ka)) out.push({ st: 'removed', key: ka, obj: oa, changes: Array.from(oa.props, ([name, v]) => ({ name, old: v, new: undefined })) });
+    // keep document order of B, with removed objects slotted after their nearest surviving predecessor from A
+    const orderA = Array.from(A.keys());
+    const posB = new Map(out.filter(e => e.st !== 'removed').map((e, i) => [e.oldKey || e.key, i]));
+    const removed = out.filter(e => e.st === 'removed');
+    const kept = out.filter(e => e.st !== 'removed');
+    for (const r of removed) {
+      let idx = orderA.indexOf(r.key), insertAt = 0;
+      while (idx > 0) { idx--; const k = orderA[idx]; if (posB.has(k)) { insertAt = kept.findIndex(e => (e.oldKey || e.key) === k) + 1; break; } }
+      kept.splice(insertAt, 0, r);
+    }
+    return kept;
+  }
+
+  return { parse, diff, kindOf };
+})();
+
+/* ===================================================================
+   Rendering
+   =================================================================== */
+const $ = id => document.getElementById(id);
+const escHtml = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+function cell(text, hl) {
+  if (text === undefined) return '';
+  if (!hl) return escHtml(text);
+  return hl.map(([m, t]) => (m ? '<mark>' + escHtml(t) + '</mark>' : escHtml(t))).join('');
+}
+
+let state = { rows: [], ssis: null, nblocks: 0, cur: -1, names: ['left', 'right'], warn: [], ms: 0, lines: [0, 0] };
+
+/* Build an HTML diff table from rows. blkStart: Map rowIndex -> block number (for navigation). */
+function tableHtml(rows, view, collapse, ctx, wrap, blkStart) {
+  const vis = new Uint8Array(rows.length);
+  if (!collapse) vis.fill(1);
+  else for (let i = 0; i < rows.length; i++) if (rows[i].t !== 'eq') { for (let j = Math.max(0, i - ctx); j <= Math.min(rows.length - 1, i + ctx); j++) vis[j] = 1; }
+  const html = [`<table class="diff${wrap ? ' wrap' : ''}">`];
+  if (view === 'side') html.push('<colgroup><col style="width:3.6em"><col><col style="width:3.6em"><col></colgroup>');
+  else html.push('<colgroup><col style="width:3.6em"><col style="width:3.6em"><col style="width:1.4em"><col></colgroup>');
+  let i = 0;
+  while (i < rows.length) {
+    if (!vis[i]) {
+      let j = i; while (j < rows.length && !vis[j]) j++;
+      const n = j - i;
+      html.push(`<tr class="fold" data-from="${i}" data-to="${j}"><td colspan="4">⋯ ${n} unchanged line${n === 1 ? '' : 's'} (click to expand)</td></tr>`);
+      for (let k = i; k < j; k++) html.push(rowHtml(rows[k], k, view, true, blkStart));
+      i = j; continue;
+    }
+    html.push(rowHtml(rows[i], i, view, false, blkStart));
+    i++;
+  }
+  html.push('</table>');
+  return html.join('');
+}
+function rowHtml(r, idx, view, hidden, blkStart) {
+  const cls = r.t + (hidden ? ' hide' : '');
+  const blk = blkStart && blkStart.has(idx) ? ` data-blk="${blkStart.get(idx)}"` : '';
+  if (view === 'side') {
+    const lc = r.t === 'add' ? 'c l blank' : 'c l';
+    const rc = r.t === 'del' ? 'c r blank' : 'c r';
+    return `<tr class="${cls}" data-i="${idx}"${blk}><td class="n l">${r.ln || ''}</td><td class="${lc}">${cell(r.l, r.lh)}</td><td class="n r">${r.rn || ''}</td><td class="${rc}">${cell(r.r, r.rh)}</td></tr>`;
+  }
+  if (r.t === 'mod') {
+    return `<tr class="mod${hidden ? ' hide' : ''}" data-i="${idx}"${blk}><td class="n l">${r.ln}</td><td class="n r"></td><td class="sign">−</td><td class="c u l">${cell(r.l, r.lh)}</td></tr>` +
+           `<tr class="mod${hidden ? ' hide' : ''}" data-i="${idx}"><td class="n l"></td><td class="n r">${r.rn}</td><td class="sign">+</td><td class="c u r">${cell(r.r, r.rh)}</td></tr>`;
+  }
+  const sign = r.t === 'add' ? '+' : r.t === 'del' ? '−' : ' ';
+  const side = r.t === 'add' ? 'r' : r.t === 'del' ? 'l' : '';
+  return `<tr class="${cls}" data-i="${idx}"${blk}><td class="n l">${r.ln || ''}</td><td class="n r">${r.rn || ''}</td><td class="sign">${sign}</td><td class="c u ${side}">${cell(r.l !== undefined ? r.l : r.r, r.lh || r.rh)}</td></tr>`;
+}
+// Fold expansion by delegation (works for the main table and the mini tables inside SSIS cards).
+$('result').addEventListener('click', e => {
+  const tr = e.target.closest('tr.fold'); if (!tr || !$('result').contains(tr)) return;
+  const table = tr.closest('table');
+  const from = +tr.dataset.from, to = +tr.dataset.to;
+  table.querySelectorAll('tr.hide').forEach(r => { const k = +r.dataset.i; if (k >= from && k < to) r.classList.remove('hide'); });
+  tr.remove();
+});
+
+function statsLine() {
+  const rows = state.rows;
+  let add = 0, del = 0, mod = 0;
+  for (const r of rows) { if (r.t === 'add') add++; else if (r.t === 'del') del++; else if (r.t === 'mod') mod++; }
+  const same = add + del + mod === 0;
+  let h = same ? '<span>Identical after normalisation.</span>'
+    : `<span class="a">+${add + mod}</span><span class="d">−${del + mod}</span><span>${state.nblocks} change block${state.nblocks === 1 ? '' : 's'}</span>` + (mod ? `<span title="lines paired as modified">${mod} modified</span>` : '');
+  return h;
+}
+function finishStats(extra) {
+  let h = extra;
+  if (state.warn.length) h += ' <span class="err">' + state.warn.map(escHtml).join(' ') + '</span>';
+  h += ` <span style="color:var(--fg2)">· ${state.lines[0]}/${state.lines[1]} lines · ${state.ms} ms</span>`;
+  $('stats').innerHTML = h;
+}
+
+function render() {
+  const view = $('view').value;
+  $('lblSame').hidden = !(view === 'ssis' && state.ssis);
+  $('btnExpandAll').hidden = (view === 'ssis' && state.ssis);
+  $('toolbar').hidden = false;
+  if (view === 'ssis' && state.ssis) { renderSsis(); return; }
+  const rows = state.rows;
+  const collapse = $('optCollapse').checked;
+  const ctx = Math.max(0, parseInt($('optCtx').value, 10) || 0);
+  const blkStart = new Map();
+  for (let i = 0; i < rows.length; i++) if (rows[i].t !== 'eq' && (i === 0 || rows[i - 1].t === 'eq')) blkStart.set(i, blkStart.size);
+  state.nblocks = blkStart.size;
+  $('result').innerHTML = tableHtml(rows, view, collapse, ctx, $('optWrap').checked, blkStart);
+  finishStats(statsLine());
+  state.cur = -1; updatePos();
+  if (state.nblocks) goTo(0, false);
+}
+
+const isBig = v => v !== undefined && (v.indexOf('\n') !== -1 || v.length > 90);
+function miniDiff(oldV, newV) {
+  const opts = getOpts();
+  const rows = buildRows(splitLines(oldV ?? ''), splitLines(newV ?? ''), opts);
+  return tableHtml(rows, 'side', $('optCollapse').checked, Math.max(1, parseInt($('optCtx').value, 10) || 3), true, null);
+}
+function propRows(changes, st) {
+  const out = [];
+  for (const c of changes) {
+    if (isBig(c.old) || isBig(c.new)) {
+      out.push(`<tr><td class="big" colspan="3"><div class="pn">${escHtml(c.name)}</div>${miniDiff(c.old, c.new)}</td></tr>`);
+      continue;
+    }
+    let oh = c.old === undefined ? '' : escHtml(c.old), nh = c.new === undefined ? '' : escHtml(c.new);
+    if (c.old !== undefined && c.new !== undefined && $('optInline').checked) {
+      const h = inlineDiff(c.old, c.new, getOpts());
+      if (h) { oh = cell(c.old, h.lh); nh = cell(c.new, h.rh); }
+    }
+    out.push(`<tr><td class="pn">${escHtml(c.name)}</td><td class="old">${oh}</td><td class="new">${nh}</td></tr>`);
+  }
+  return out.join('');
+}
+function renderSsis() {
+  const entries = state.ssis;
+  const showSame = $('optShowSame').checked;
+  const counts = { modified: 0, renamed: 0, added: 0, removed: 0, same: 0 };
+  for (const e of entries) counts[e.st]++;
+  const html = ['<div class="cards">'];
+  const changed = counts.modified + counts.renamed + counts.added + counts.removed;
+  html.push(`<div class="summary"><b>${changed ? changed + ' object' + (changed === 1 ? '' : 's') + ' changed' : 'No functional changes'}</b>` +
+    `<span>${counts.modified} modified</span><span>${counts.renamed} renamed/moved</span><span>${counts.added} added</span><span>${counts.removed} removed</span><span>${counts.same} unchanged</span></div>`);
+  let blk = 0;
+  for (const e of entries) {
+    if (e.st === 'same' && !showSame) continue;
+    const o = e.obj;
+    const parent = e.key.replace(/[\\.][^\\.\[\]]+(\[[^\]]*\])?$/, '');
+    const head = `<div class="ch"><span class="badge">${e.st === 'same' ? 'unchanged' : e.st}</span><b>${escHtml(o.name)}</b><span class="kind">${escHtml(o.kind)}</span><span class="path" title="${escHtml(e.key)}">${escHtml(parent === e.key ? '' : parent)}</span></div>`;
+    let body = '';
+    if (e.st === 'modified' || e.st === 'renamed') {
+      body = `<table class="props"><thead><tr><th>Property</th><th>Old</th><th>New</th></tr></thead><tbody>${propRows(e.changes)}</tbody></table>`;
+    } else if (e.st === 'added' || e.st === 'removed') {
+      const n = e.changes.length;
+      body = `<details><summary>${n} propert${n === 1 ? 'y' : 'ies'}</summary><table class="props"><tbody>${e.changes.map(c => `<tr><td class="pn">${escHtml(c.name)}</td><td class="${e.st === 'added' ? 'new' : 'old'}" colspan="2">${escHtml((c.new ?? c.old) ?? '')}</td></tr>`).join('')}</tbody></table></details>`;
+    }
+    const blkAttr = e.st === 'same' ? '' : ` data-blk="${blk++}"`;
+    html.push(`<div class="card ${e.st}"${blkAttr}>${head}${body}</div>`);
+  }
+  html.push('</div>');
+  state.nblocks = blk;
+  $('result').innerHTML = html.join('');
+  finishStats(`<span class="${changed ? 'd' : ''}">${changed} object${changed === 1 ? '' : 's'} changed</span><span>${counts.same} unchanged</span>`);
+  state.cur = -1; updatePos();
+  if (state.nblocks) goTo(0, false);
+}
+
+function updatePos() {
+  const n = state.nblocks;
+  $('pos').textContent = n ? `${state.cur + 1} / ${n}` : '0 / 0';
+  $('btnPrev').disabled = n === 0; $('btnNext').disabled = n === 0;
+}
+function goTo(b, smooth = true) {
+  const n = state.nblocks; if (!n) return;
+  state.cur = ((b % n) + n) % n;
+  const res = $('result');
+  res.querySelectorAll('.cur').forEach(x => x.classList.remove('cur'));
+  const el = res.querySelector(`[data-blk="${state.cur}"]`);
+  if (el) {
+    el.classList.add('cur');
+    if (el.tagName === 'TR') { let s = el.nextElementSibling; while (s && s.dataset.i === el.dataset.i) { s.classList.add('cur'); s = s.nextElementSibling; } }
+    el.scrollIntoView({ block: 'center', behavior: smooth ? 'smooth' : 'auto' });
+  }
+  updatePos();
+}
+
+/* ===================================================================
+   Text output (for copy / save)
+   =================================================================== */
+function unifiedFromRows(rows, nameA, nameB) {
+  const out = [`--- ${nameA}`, `+++ ${nameB}`];
+  const ctx = 3;
+  let i = 0;
+  while (i < rows.length) {
+    if (rows[i].t === 'eq') { i++; continue; }
+    let s = Math.max(0, i - ctx), e = i, last = i;
+    while (e < rows.length) { if (rows[e].t !== 'eq') last = e; if (e - last > 2 * ctx) break; e++; }
+    e = Math.min(rows.length, last + ctx + 1);
+    let la = 0, lb = 0, sa = null, sb = null;
+    const body = [];
+    for (let k = s; k < e; k++) {
+      const r = rows[k];
+      if (r.ln !== undefined) { if (sa === null) sa = r.ln; la++; }
+      if (r.rn !== undefined) { if (sb === null) sb = r.rn; lb++; }
+      if (r.t === 'eq') body.push(' ' + r.l);
+      else if (r.t === 'del') body.push('-' + r.l);
+      else if (r.t === 'add') body.push('+' + r.r);
+      else { body.push('-' + r.l); body.push('+' + r.r); }
+    }
+    out.push(`@@ -${sa ?? 0},${la} +${sb ?? 0},${lb} @@`);
+    out.push(...body);
+    i = e;
+  }
+  return out.join('\n') + '\n';
+}
+function unifiedText() {
+  if ($('view').value === 'ssis' && state.ssis) return ssisText();
+  return unifiedFromRows(state.rows, state.names[0], state.names[1]);
+}
+function ssisText() {
+  const opts = getOpts();
+  const out = [`SSIS package compare`, `old: ${state.names[0]}`, `new: ${state.names[1]}`, ''];
+  for (const e of state.ssis) {
+    if (e.st === 'same') continue;
+    out.push(`${e.st.toUpperCase()}: ${e.key}  [${e.obj.kind}]`);
+    for (const c of e.changes) {
+      if (isBig(c.old) || isBig(c.new)) {
+        out.push(`  ${c.name}:`);
+        out.push(unifiedFromRows(buildRows(splitLines(c.old ?? ''), splitLines(c.new ?? ''), opts), 'old', 'new').replace(/^/gm, '    ').trimEnd());
+      } else if (c.old === undefined) out.push(`  + ${c.name} = ${c.new}`);
+      else if (c.new === undefined) out.push(`  - ${c.name} = ${c.old}`);
+      else out.push(`  ~ ${c.name}: ${c.old}  ->  ${c.new}`);
+    }
+    out.push('');
+  }
+  if (out.length === 4) out.push('No functional changes.');
+  return out.join('\n') + '\n';
+}
+
+function download(name, text, type = 'text/plain') {
+  const blob = new Blob([text], { type });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+}
+
+function reportHtml() {
+  const style = document.querySelector('style').textContent;
+  const body = $('result').innerHTML.replace(/ class="eq hide"/g, ' class="eq"').replace(/<tr class="fold"[^>]*>.*?<\/tr>/gs, '');
+  const theme = document.documentElement.getAttribute('data-theme') || '';
+  return `<!doctype html><html lang="en"${theme ? ` data-theme="${theme}"` : ''}><head><meta charset="utf-8"><title>Diff: ${escHtml(state.names[0])} vs ${escHtml(state.names[1])}</title><style>${style}</style></head><body><main style="padding:16px"><h2 style="font-size:15px;margin:0 0 8px">${escHtml(state.names[0])} &nbsp;→&nbsp; ${escHtml(state.names[1])}</h2><div style="font-size:13px;margin-bottom:8px">${$('stats').innerHTML}</div><div class="result" style="display:block">${body}</div></main></body></html>`;
+}
+
+/* ===================================================================
+   Compare pipeline
+   =================================================================== */
+function getOpts() {
+  return {
+    preset: $('preset').value,
+    trim: $('optTrim').checked, ws: $('optWs').checked, nocase: $('optCase').checked, blank: $('optBlank').checked,
+    inline: $('optInline').checked,
+    xAttrLines: $('xAttrLines').checked, xSortAttrs: $('xSortAttrs').checked, xStripLayout: $('xStripLayout').checked,
+    xStripStamps: $('xStripStamps').checked, xStripIds: $('xStripIds').checked,
+    xExtra: $('xExtra').value.split(',').map(s => s.trim()).filter(Boolean),
+  };
+}
+
+function splitLines(t) {
+  const lines = t.replace(/\r\n?/g, '\n').split('\n');
+  if (lines.length && lines[lines.length - 1] === '') lines.pop();
+  return lines;
+}
+
+function compare() {
+  const opts = getOpts();
+  const rawL = $('txtL').value, rawR = $('txtR').value;
+  state.warn = [];
+  state.names = [$('nameL').value || 'left', $('nameR').value || 'right'];
+  const t0 = performance.now();
+  // Semantic SSIS compare (object by object) when the preset is SSIS.
+  state.ssis = null;
+  if (opts.preset === 'ssis') {
+    const A = SSIS.parse(rawL), B = SSIS.parse(rawR);
+    if (A && B) state.ssis = SSIS.diff(A, B, opts);
+    else { state.warn.push((A ? 'Right' : 'Left') + ' side is not well-formed XML; object view unavailable.'); if ($('view').value === 'ssis') $('view').value = 'side'; }
+  } else if ($('view').value === 'ssis') $('view').value = 'side';
+  // Text compare (always computed so the user can flip to raw view).
+  const a = applyPreset(rawL, opts), b = applyPreset(rawR, opts);
+  if (a.warn) state.warn.push('Left: ' + a.warn);
+  if (b.warn) state.warn.push('Right: ' + b.warn);
+  const al = splitLines(a.text), bl = splitLines(b.text);
+  state.lines = [al.length, bl.length];
+  state.rows = buildRows(al, bl, opts);
+  state.ms = Math.round(performance.now() - t0);
+  render();
+  $('result').scrollIntoView({ block: 'nearest' });
+}
+
+/* ===================================================================
+   File loading & drag/drop
+   =================================================================== */
+function readFileInto(side, file) {
+  const rd = new FileReader();
+  rd.onload = () => { $('txt' + side).value = rd.result; $('name' + side).value = file.name; autoPreset(file.name); maybeAutoCompare(); };
+  rd.readAsText(file);
+}
+function autoPreset(name) {
+  const ext = (name.split('.').pop() || '').toLowerCase();
+  if (ext === 'dtsx' || ext === 'conmgr' || ext === 'params') { $('preset').value = 'ssis'; $('view').value = 'ssis'; }
+  else if (ext === 'sql') $('preset').value = 'sql';
+  else if (['xml', 'dtproj', 'conmgr', 'params', 'rdl', 'dtsconfig', 'csproj', 'config'].includes(ext)) { if ($('preset').value === 'text') $('preset').value = 'xml'; }
+}
+let pendingAuto = false;
+function maybeAutoCompare() {
+  if ($('txtL').value && $('txtR').value) { pendingAuto = true; setTimeout(() => { if (pendingAuto) { pendingAuto = false; compare(); } }, 50); }
+}
+for (const side of ['L', 'R']) {
+  const pane = $('pane' + side);
+  pane.addEventListener('dragover', e => { e.preventDefault(); pane.classList.add('drag'); });
+  pane.addEventListener('dragleave', () => pane.classList.remove('drag'));
+  pane.addEventListener('drop', e => {
+    e.preventDefault(); pane.classList.remove('drag');
+    const f = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) readFileInto(side, f);
+  });
+  $('file' + side).addEventListener('change', e => { const f = e.target.files[0]; if (f) readFileInto(side, f); e.target.value = ''; });
+  $('txt' + side).addEventListener('paste', () => setTimeout(() => { if (!$('name' + side).value) $('name' + side).value = side === 'L' ? 'left (pasted)' : 'right (pasted)'; }, 0));
+}
+document.querySelectorAll('button.browse').forEach(b => b.addEventListener('click', () => $('file' + b.dataset.side).click()));
+// Dropping two files at once on the page: first goes left, second right.
+document.addEventListener('dragover', e => e.preventDefault());
+document.addEventListener('drop', e => {
+  e.preventDefault();
+  if (e.target.closest('.pane')) return;
+  const fs = e.dataTransfer.files;
+  if (fs.length >= 2) { readFileInto('L', fs[0]); readFileInto('R', fs[1]); }
+  else if (fs.length === 1) readFileInto($('txtL').value ? 'R' : 'L', fs[0]);
+});
+
+/* ===================================================================
+   Folder compare
+   =================================================================== */
+const dirs = { L: null, R: null };
+function readEntryTree(entry, prefix, outMap) {
+  return new Promise(resolve => {
+    if (entry.isFile) entry.file(f => { outMap.set(prefix + entry.name, f); resolve(); }, () => resolve());
+    else if (entry.isDirectory) {
+      const reader = entry.createReader();
+      const all = [];
+      const readMore = () => reader.readEntries(async ents => {
+        if (!ents.length) { for (const en of all) await readEntryTree(en, prefix + entry.name + '/', outMap); resolve(); return; }
+        all.push(...ents); readMore();
+      }, () => resolve());
+      readMore();
+    } else resolve();
+  });
+}
+function stripRoot(map) {
+  // remove the common top-level folder from keys
+  const keys = Array.from(map.keys());
+  if (!keys.length) return { name: '—', files: map };
+  const root = keys[0].split('/')[0];
+  if (keys.every(k => k.startsWith(root + '/'))) {
+    const m = new Map(); for (const [k, v] of map) m.set(k.slice(root.length + 1), v); return { name: root, files: m };
+  }
+  return { name: '(files)', files: map };
+}
+async function setDirFromFiles(side, fileList) {
+  const map = new Map();
+  for (const f of fileList) map.set(f.webkitRelativePath || f.name, f);
+  const d = stripRoot(map); dirs[side] = d; $('dirName' + side).textContent = `${d.name}  (${d.files.size} files)`;
+}
+async function setDirFromDrop(side, items) {
+  const map = new Map();
+  for (const it of items) { const en = it.webkitGetAsEntry && it.webkitGetAsEntry(); if (en) await readEntryTree(en, '', map); }
+  const d = stripRoot(map); dirs[side] = d; $('dirName' + side).textContent = `${d.name}  (${d.files.size} files)`;
+}
+for (const side of ['L', 'R']) {
+  const pane = $('dirPane' + side);
+  pane.addEventListener('dragover', e => { e.preventDefault(); pane.classList.add('drag'); });
+  pane.addEventListener('dragleave', () => pane.classList.remove('drag'));
+  pane.addEventListener('drop', async e => { e.preventDefault(); e.stopPropagation(); pane.classList.remove('drag'); await setDirFromDrop(side, Array.from(e.dataTransfer.items)); if (dirs.L && dirs.R) dirCompare(); });
+  $('dir' + side).addEventListener('change', async e => { await setDirFromFiles(side, Array.from(e.target.files)); e.target.value = ''; if (dirs.L && dirs.R) dirCompare(); });
+}
+document.querySelectorAll('button.browsedir').forEach(b => b.addEventListener('click', () => $('dir' + b.dataset.side).click()));
+const fileText = f => new Promise(res => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => res(null); r.readAsText(f); });
+const isTextual = name => !/\.(png|jpg|jpeg|gif|ico|dll|exe|pdb|zip|7z|bak|mdf|ldf|ispac|bin)$/i.test(name);
+async function dirCompare() {
+  if (!dirs.L || !dirs.R) { $('dirResult').innerHTML = '<div class="msg">Pick both folders first.</div>'; return; }
+  const only = $('dirOnlyDiff').checked;
+  const keys = Array.from(new Set([...dirs.L.files.keys(), ...dirs.R.files.keys()])).sort();
+  const rows = [];
+  $('dirResult').innerHTML = `<div class="msg">Reading ${keys.length} files…</div>`;
+  for (const k of keys) {
+    const fl = dirs.L.files.get(k), fr = dirs.R.files.get(k);
+    let st;
+    if (fl && fr) {
+      if (fl.size === fr.size && isTextual(k)) { const [a, b] = await Promise.all([fileText(fl), fileText(fr)]); st = a === b ? 'same' : 'modified'; }
+      else if (fl.size === fr.size) st = 'same?';
+      else st = 'modified';
+    } else st = fl ? 'removed' : 'added';
+    rows.push({ k, st, fl, fr });
+  }
+  const fmt = n => n === undefined ? '' : n.toLocaleString();
+  const counts = rows.reduce((c, r) => (c[r.st] = (c[r.st] || 0) + 1, c), {});
+  let html = `<table class="ftab"><thead><tr><th>Path</th><th>Status</th><th>Left bytes</th><th>Right bytes</th></tr></thead><tbody>`;
+  for (const r of rows) {
+    if (only && r.st === 'same') continue;
+    const click = r.fl && r.fr && isTextual(r.k);
+    html += `<tr class="${r.st.replace('?', '')}${click ? ' clickable' : ''}" data-k="${escHtml(r.k)}" title="${click ? 'Click to open side-by-side' : ''}"><td class="p">${escHtml(r.k)}</td><td class="s">${r.st}</td><td>${fmt(r.fl && r.fl.size)}</td><td>${fmt(r.fr && r.fr.size)}</td></tr>`;
+  }
+  html += '</tbody></table>';
+  const summary = `<div class="msg">${keys.length} paths · ${counts.modified || 0} modified · ${counts.added || 0} added · ${counts.removed || 0} removed · ${counts.same || 0} same</div>`;
+  $('dirResult').innerHTML = summary + html;
+  $('dirResult').querySelectorAll('tr.clickable').forEach(tr => tr.addEventListener('click', async () => {
+    const r = rows.find(x => x.k === tr.dataset.k);
+    $('txtL').value = await fileText(r.fl); $('txtR').value = await fileText(r.fr);
+    $('nameL').value = dirs.L.name + '/' + r.k; $('nameR').value = dirs.R.name + '/' + r.k;
+    autoPreset(r.k); setMode('files'); compare();
+  }));
+}
+$('btnDirCompare').addEventListener('click', dirCompare);
+$('dirOnlyDiff').addEventListener('change', () => { if (dirs.L && dirs.R) dirCompare(); });
+
+/* ===================================================================
+   UI wiring
+   =================================================================== */
+function setMode(m) {
+  const files = m === 'files';
+  $('filesMode').style.display = files ? '' : 'none';
+  $('foldersMode').classList.toggle('on', !files);
+  $('tabFiles').classList.toggle('on', files); $('tabFolders').classList.toggle('on', !files);
+  $('options').style.display = files ? '' : 'none';
+  $('toolbar').style.display = files ? '' : 'none';
+  $('result').style.display = files ? '' : 'none';
+}
+$('tabFiles').addEventListener('click', () => setMode('files'));
+$('tabFolders').addEventListener('click', () => setMode('folders'));
+$('btnCompare').addEventListener('click', compare);
+$('btnSwap').addEventListener('click', () => {
+  const t = $('txtL').value; $('txtL').value = $('txtR').value; $('txtR').value = t;
+  const n = $('nameL').value; $('nameL').value = $('nameR').value; $('nameR').value = n;
+  if (state.rows.length) compare();
+});
+$('btnClear').addEventListener('click', () => { $('txtL').value = $('txtR').value = $('nameL').value = $('nameR').value = ''; $('result').innerHTML = ''; $('toolbar').hidden = true; state.rows = []; $('inputs').classList.remove('collapsed'); $('btnCollapse').textContent = 'Hide inputs'; });
+$('btnCollapse').addEventListener('click', () => { const c = $('inputs').classList.toggle('collapsed'); $('btnCollapse').textContent = c ? 'Show inputs' : 'Hide inputs'; });
+$('btnPrev').addEventListener('click', () => goTo(state.cur - 1));
+$('btnNext').addEventListener('click', () => goTo(state.cur + 1));
+$('btnExpandAll').addEventListener('click', () => { $('optCollapse').checked = false; render(); });
+$('btnCopy').addEventListener('click', async () => {
+  const t = unifiedText();
+  try { await navigator.clipboard.writeText(t); $('btnCopy').textContent = 'Copied'; }
+  catch { const ta = document.createElement('textarea'); ta.value = t; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); $('btnCopy').textContent = 'Copied'; }
+  setTimeout(() => $('btnCopy').textContent = 'Copy diff', 1200);
+});
+$('btnSave').addEventListener('click', () => download((state.names[1] || 'compare').replace(/[^\w.-]+/g, '_') + '.diff', unifiedText()));
+$('btnReport').addEventListener('click', () => download((state.names[1] || 'compare').replace(/[^\w.-]+/g, '_') + '.diff.html', reportHtml(), 'text/html'));
+['view', 'optWrap', 'optCollapse', 'optCtx', 'optShowSame'].forEach(id => $(id).addEventListener('change', () => { if (state.rows.length || state.ssis) render(); }));
+['preset', 'optTrim', 'optWs', 'optCase', 'optBlank', 'optInline', 'xAttrLines', 'xSortAttrs', 'xStripLayout', 'xStripStamps', 'xStripIds'].forEach(id => $(id).addEventListener('change', () => { saveSettings(); if (state.rows.length) compare(); }));
+$('xExtra').addEventListener('change', () => { saveSettings(); if (state.rows.length) compare(); });
+$('preset').addEventListener('change', () => { if ($('preset').value === 'ssis') $('view').value = 'ssis'; else if ($('view').value === 'ssis') $('view').value = 'side'; });
+$('btnTheme').addEventListener('click', () => {
+  const cur = document.documentElement.getAttribute('data-theme');
+  const dark = cur ? cur === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
+  document.documentElement.setAttribute('data-theme', dark ? 'light' : 'dark');
+  saveSettings();
+});
+$('btnHelp').addEventListener('click', () => {
+  alert([
+    'Code Compare — single file, offline.',
+    '',
+    'Files tab: paste or drop two files (or drop two files at once anywhere on the page). Compare runs automatically when both sides come from files; press Compare or Ctrl+Enter after pasting.',
+    'Folders tab: pick/drop two folders to see which files differ, then click a row to open it side by side.',
+    '',
+    'Presets: SQL trims trailing whitespace. XML pretty-prints so each attribute is its own line.',
+    'SSIS package: both .dtsx files are parsed into their objects (tasks, containers, data flow components, connection managers, variables, constraints, script code) and compared object by object. IDs, GUIDs, timestamps, build numbers and designer layout are ignored, so you see which task changed and what inside it, e.g. the old and new SQL of an Execute SQL Task. Switch View to Side by side / Unified for the normalised XML text.',
+    '',
+    'Shortcuts: Ctrl+Enter compare · Alt+↓ / Alt+↑ next/prev change · Esc jump back to inputs',
+    '',
+    'Copy diff / Save .diff give a standard unified diff. Save report writes this view as a standalone HTML file.',
+  ].join('\n'));
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); compare(); }
+  else if (e.altKey && e.key === 'ArrowDown') { e.preventDefault(); goTo(state.cur + 1); }
+  else if (e.altKey && e.key === 'ArrowUp') { e.preventDefault(); goTo(state.cur - 1); }
+  else if (e.key === 'Escape') { $('inputs').classList.remove('collapsed'); $('btnCollapse').textContent = 'Hide inputs'; $('inputs').scrollIntoView({ block: 'start' }); }
+});
+
+/* settings persistence (best effort; Citrix profiles may discard it) */
+const SETTING_IDS = ['preset', 'optTrim', 'optWs', 'optCase', 'optBlank', 'optInline', 'view', 'optWrap', 'optCollapse', 'optCtx', 'xAttrLines', 'xSortAttrs', 'xStripLayout', 'xStripStamps', 'xStripIds', 'xExtra'];
+function saveSettings() {
+  try {
+    const s = {};
+    for (const id of SETTING_IDS) { const el = $(id); s[id] = el.type === 'checkbox' ? el.checked : el.value; }
+    s.theme = document.documentElement.getAttribute('data-theme') || '';
+    localStorage.setItem('codecompare.settings', JSON.stringify(s));
+  } catch {}
+}
+function loadSettings() {
+  try {
+    const s = JSON.parse(localStorage.getItem('codecompare.settings') || 'null');
+    if (!s) return;
+    for (const id of SETTING_IDS) { const el = $(id); if (!(id in s)) continue; if (el.type === 'checkbox') el.checked = !!s[id]; else el.value = s[id]; }
+    if (s.theme) document.documentElement.setAttribute('data-theme', s.theme);
+  } catch {}
+}
+loadSettings();
+if ($('view').value === 'ssis' && $('preset').value !== 'ssis') $('view').value = 'side';
+if ($('preset').value === 'ssis') $('view').value = 'ssis';
+['view', 'optWrap', 'optCollapse', 'optCtx'].forEach(id => $(id).addEventListener('change', saveSettings));
+
+// Expose for tests / console use.
+window.CodeCompare = { myers, buildRows, xmlNormalize, applyPreset, unifiedText, compare, state, SSIS };
+</script>
+</body>
+</html>
